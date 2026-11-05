@@ -1,40 +1,56 @@
-// GENERATED CODE - DO NOT MODIFY BY HAND
+// GENERATED CODE - DO NOT MODIFY BY HAND.
+// ignore_for_file: file_names, non_constant_identifier_names
 
-// Not every language uses common_modes.
-// ignore_for_file: unused_import
+import '../highlight_core.dart';
 
-import '../src/mode.dart';
-import '../src/common_modes.dart';
-
-final dsconfig = Mode(
-    refs: {},
-    keywords: "dsconfig",
+/// Highlight.js language definition for `dsconfig`.
+Mode dsconfig(Highlight hljs) {
+  return Mode(
+    keywords: r'dsconfig',
     contains: [
       Mode(
-          className: "keyword",
-          begin: "^dsconfig",
-          end: "\\s",
-          excludeEnd: true,
-          relevance: 10),
+        scope: r'keyword',
+        begin: r'^dsconfig',
+        end: r'\s',
+        excludeEnd: true,
+        relevance: 10,
+      ),
       Mode(
-          className: "built_in",
-          begin: "(list|create|get|set|delete)-(\\w+)",
-          end: "\\s",
-          excludeEnd: true,
-          illegal: "!@#\$%^&*()",
-          relevance: 10),
+        scope: r'built_in',
+        begin: r'(list|create|get|set|delete)-(\w+)',
+        end: r'\s',
+        excludeEnd: true,
+        illegal: r'!@#$%^&*()',
+        relevance: 10,
+      ),
+      Mode(scope: r'built_in', begin: r'--(\w+)', end: r'\s', excludeEnd: true),
+      Mode(scope: r'string', begin: r'"', end: r'"'),
+      Mode(scope: r'string', begin: r"'", end: r"'"),
+      Mode(scope: r'string', begin: r'[\w\-?]+:\w+', end: r'\W', relevance: 0),
       Mode(
-          className: "built_in",
-          begin: "--(\\w+)",
-          end: "\\s",
-          excludeEnd: true),
-      Mode(className: "string", begin: "\"", end: "\""),
-      Mode(className: "string", begin: "'", end: "'"),
+        scope: r'string',
+        begin: r'\w+(\-\w+)*',
+        end: r'(?=\W)',
+        relevance: 0,
+      ),
       Mode(
-          className: "string",
-          begin: "[\\w-?]+:\\w+",
-          end: "\\W",
-          relevance: 0),
-      Mode(className: "string", begin: "\\w+-?\\w+", end: "\\W", relevance: 0),
-      HASH_COMMENT_MODE
-    ]);
+        scope: r'comment',
+        begin: r'#',
+        end: r'$',
+        contains: [
+          Mode(
+            scope: r'doctag',
+            begin: r'[ ]*(?=(TODO|FIXME|NOTE|BUG|OPTIMIZE|HACK|XXX):)',
+            end: r'(TODO|FIXME|NOTE|BUG|OPTIMIZE|HACK|XXX):',
+            excludeBegin: true,
+            relevance: 0,
+          ),
+          Mode(
+            begin:
+                r"[ ]+((?:I|a|is|so|us|to|at|if|in|it|on|[A-Za-z]+['](d|ve|re|ll|t|s|n)|[A-Za-z]+[-][a-z]+|[A-Za-z][a-z]{2,})[.]?[:]?([.][ ]|[ ])){3}",
+          ),
+        ],
+      ),
+    ],
+  );
+}

@@ -1,3 +1,16 @@
+## 0.8.0
+
+Breaking highlight.js 11 migration.
+
+- Replace the 0.7 engine and generated grammars with upstream master `696d9a4`.
+- Preserve the limited 38-grammar default registry and all 78 existing aliases.
+- Add reusable public continuation checkpoints, including embedded-language state.
+- Port Solidity and Vue. Reduce Solidity relevance for generic JavaScript/Go constructs.
+- Add native/browser continuation tests and reproducible evaluation tools.
+- Require Dart 3.8. Replace the legacy parse/Node API with hljs/HighlightResult/DataNode.
+- Remove the old `languages/all.dart` export; use the default registry or register individual grammars.
+- Add reproducible full-parse and streaming benchmark tooling.
+
 ## 0.7.1
 
 - SDK constraint `^3.0.0` (was the Dart 2 bound `>=2.12.0 <3.0.0`).

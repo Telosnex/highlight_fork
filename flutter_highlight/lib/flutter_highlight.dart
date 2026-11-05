@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/widgets.dart';
-import 'package:highlight_fork/highlight.dart' show highlight, Node;
+import 'package:highlight_fork/highlight.dart'
+    show hljs, ensureInitialized, DataNode;
 
 /// Highlight Flutter Widget
 class HighlightView extends StatelessWidget {
@@ -36,37 +37,22 @@ class HighlightView extends StatelessWidget {
     int tabSize = 8, // TODO: https://github.com/flutter/flutter/issues/50087
   }) : source = input.replaceAll('\t', ' ' * tabSize);
 
-  List<TextSpan> _convert(List<Node> nodes) {
-    List<TextSpan> spans = [];
-    var currentSpans = spans;
-    List<List<TextSpan>> stack = [];
-
-    _traverse(Node node) {
-      if (node.value != null) {
-        currentSpans.add(node.className == null
-            ? TextSpan(text: node.value)
-            : TextSpan(text: node.value, style: theme[node.className!]));
-      } else if (node.children != null) {
-        List<TextSpan> tmp = [];
-        currentSpans
-            .add(TextSpan(children: tmp, style: theme[node.className!]));
-        stack.add(currentSpans);
-        currentSpans = tmp;
-
-        node.children!.forEach((n) {
-          _traverse(n);
-          if (n == node.children!.last) {
-            currentSpans = stack.isEmpty ? spans : stack.removeLast();
-          }
-        });
+  List<TextSpan> _convert(List<dynamic> nodes) {
+    return nodes.map((node) {
+      if (node is String) return TextSpan(text: node);
+      final data = node as DataNode;
+      final scope = data.scope;
+      TextStyle? style;
+      if (scope != null && !scope.startsWith('language:')) {
+        var key = scope;
+        while (true) {
+          style = theme[key];
+          if (style != null || !key.contains('.')) break;
+          key = key.substring(0, key.lastIndexOf('.'));
+        }
       }
-    }
-
-    for (var node in nodes) {
-      _traverse(node);
-    }
-
-    return spans;
+      return TextSpan(children: _convert(data.children), style: style);
+    }).toList();
   }
 
   static const _rootKey = 'root';
@@ -80,6 +66,13 @@ class HighlightView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    ensureInitialized();
+    final result = language == null
+        ? hljs.highlightAuto(source)
+        : hljs.highlight(
+            source,
+            language: hljs.hasLanguage(language!) ? language! : 'plaintext',
+          );
     var _textStyle = TextStyle(
       fontFamily: _defaultFontFamily,
       color: theme[_rootKey]?.color ?? _defaultFontColor,
@@ -94,8 +87,7 @@ class HighlightView extends StatelessWidget {
       child: RichText(
         text: TextSpan(
           style: _textStyle,
-          children:
-              _convert(highlight.parse(source, language: language).nodes!),
+          children: _convert(result.emitter.root.children),
         ),
       ),
     );

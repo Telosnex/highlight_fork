@@ -1,34 +1,61 @@
-// GENERATED CODE - DO NOT MODIFY BY HAND
+// GENERATED CODE - DO NOT MODIFY BY HAND.
+// ignore_for_file: file_names, non_constant_identifier_names
 
-// Not every language uses common_modes.
-// ignore_for_file: unused_import
+import '../highlight_core.dart';
 
-import '../src/mode.dart';
-import '../src/common_modes.dart';
-
-final profile = Mode(refs: {}, contains: [
-  C_NUMBER_MODE,
-  Mode(
-      begin: "[a-zA-Z_][\\da-zA-Z_]+\\.[\\da-zA-Z_]{1,3}",
-      end: ":",
-      excludeEnd: true),
-  Mode(
-      begin: "(ncalls|tottime|cumtime)",
-      end: "\$",
-      keywords: "ncalls tottime|10 cumtime|10 filename",
-      relevance: 10),
-  Mode(
-      begin: "function calls",
-      end: "\$",
-      contains: [C_NUMBER_MODE],
-      relevance: 10),
-  APOS_STRING_MODE,
-  QUOTE_STRING_MODE,
-  Mode(
-      className: "string",
-      begin: "\\(",
-      end: "\\)\$",
-      excludeBegin: true,
-      excludeEnd: true,
-      relevance: 0)
-]);
+/// Highlight.js language definition for `profile`.
+Mode profile(Highlight hljs) {
+  final Mode mode0 = Mode();
+  final Mode mode1 = Mode();
+  mode0.scope = r'number';
+  mode0.begin =
+      r'(-?)(\b0[xX][a-fA-F0-9]+|(\b\d+(\.\d*)?|\.\d+)([eE][-+]?\d+)?)';
+  mode0.relevance = 0;
+  mode1.begin = r'\\[\s\S]';
+  mode1.relevance = 0;
+  return Mode(
+    name: r'Python profiler',
+    contains: [
+      mode0,
+      Mode(
+        begin: r'[a-zA-Z_][\da-zA-Z_]+\.[\da-zA-Z_]{1,3}',
+        end: r':',
+        excludeEnd: true,
+      ),
+      Mode(
+        begin: r'(ncalls|tottime|cumtime)',
+        end: r'$',
+        keywords: r'ncalls tottime|10 cumtime|10 filename',
+        relevance: 10,
+      ),
+      Mode(
+        begin: r'function calls',
+        end: r'$',
+        contains: [mode0],
+        relevance: 10,
+      ),
+      Mode(
+        scope: r'string',
+        begin: r"'",
+        end: r"'",
+        illegal: r'\n',
+        contains: [mode1],
+      ),
+      Mode(
+        scope: r'string',
+        begin: r'"',
+        end: r'"',
+        illegal: r'\n',
+        contains: [mode1],
+      ),
+      Mode(
+        scope: r'string',
+        begin: r'\(',
+        end: r'\)$',
+        excludeBegin: true,
+        excludeEnd: true,
+        relevance: 0,
+      ),
+    ],
+  );
+}

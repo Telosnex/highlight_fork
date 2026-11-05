@@ -1,74 +1,97 @@
-// GENERATED CODE - DO NOT MODIFY BY HAND
+// GENERATED CODE - DO NOT MODIFY BY HAND.
+// ignore_for_file: file_names, non_constant_identifier_names
 
-// Not every language uses common_modes.
-// ignore_for_file: unused_import
+import '../highlight_core.dart';
 
-import '../src/mode.dart';
-import '../src/common_modes.dart';
-
-final ini = Mode(
-    refs: {
-      '~contains~2~starts~contains~1~contains~4': Mode(
-          className: "number",
-          relevance: 0,
-          variants: [
-            Mode(begin: "([\\+\\-]+)?[\\d]+_[\\d_]+"),
-            Mode(begin: "\\b\\d+(\\.\\d+)?")
-          ]),
-      '~contains~2~starts~contains~1~contains~3':
-          Mode(className: "string", contains: [
-        BACKSLASH_ESCAPE
-      ], variants: [
-        Mode(begin: "'''", end: "'''", relevance: 10),
-        Mode(begin: "\"\"\"", end: "\"\"\"", relevance: 10),
-        Mode(begin: "\"", end: "\""),
-        Mode(begin: "'", end: "'")
-      ]),
-      '~contains~2~starts~contains~1~contains~2': Mode(
-          className: "variable",
-          variants: [
-            Mode(begin: "\\\$[\\w\\d\"][\\w\\d_]*"),
-            Mode(begin: "\\\$\\{(.*?)}")
-          ]),
-      '~contains~2~starts~contains~1~contains~1':
-          Mode(className: "literal", begin: "\\bon|off|true|false|yes|no\\b"),
-      '~contains~0': Mode(className: "comment", contains: [
-        PHRASAL_WORDS_MODE,
-        Mode(
-            className: "doctag",
-            begin: "(?:TODO|FIXME|NOTE|BUG|XXX):",
-            relevance: 0)
-      ], variants: [
-        Mode(begin: ";", end: "\$"),
-        Mode(begin: "#", end: "\$")
-      ]),
-    },
-    aliases: ["toml"],
-    case_insensitive: true,
-    illegal: "\\S",
+/// Highlight.js language definition for `ini`.
+Mode ini(Highlight hljs) {
+  final Mode mode0 = Mode();
+  final Mode mode1 = Mode();
+  final Mode mode2 = Mode();
+  final Mode mode3 = Mode();
+  final Mode mode4 = Mode();
+  final Mode mode5 = Mode();
+  final Mode mode6 = Mode();
+  final Mode mode7 = Mode();
+  final Mode mode8 = Mode();
+  final Mode mode9 = Mode();
+  final Mode mode10 = Mode();
+  final Mode mode11 = Mode();
+  final Mode mode12 = Mode();
+  final Mode mode13 = Mode();
+  final Mode mode14 = Mode();
+  final Mode mode15 = Mode();
+  final Mode mode16 = Mode();
+  final Mode mode17 = Mode();
+  mode0.scope = r'comment';
+  mode0.contains = [mode1, mode2];
+  mode0.variants = [mode3, mode4];
+  mode1.scope = r'doctag';
+  mode1.begin = r'[ ]*(?=(TODO|FIXME|NOTE|BUG|OPTIMIZE|HACK|XXX):)';
+  mode1.end = r'(TODO|FIXME|NOTE|BUG|OPTIMIZE|HACK|XXX):';
+  mode1.excludeBegin = true;
+  mode1.relevance = 0;
+  mode2.begin =
+      r"[ ]+((?:I|a|is|so|us|to|at|if|in|it|on|[A-Za-z]+['](d|ve|re|ll|t|s|n)|[A-Za-z]+[-][a-z]+|[A-Za-z][a-z]{2,})[.]?[:]?([.][ ]|[ ])){3}";
+  mode3.begin = r';';
+  mode3.end = r'$';
+  mode4.begin = r'#';
+  mode4.end = r'$';
+  mode5.scope = r'literal';
+  mode5.begin = r'\bon|off|true|false|yes|no\b';
+  mode6.scope = r'variable';
+  mode6.variants = [mode7, mode8];
+  mode7.begin = r'\$[\w\d"][\w\d_]*';
+  mode8.begin = r'\$\{(.*?)\}';
+  mode9.scope = r'string';
+  mode9.contains = [mode10];
+  mode9.variants = [mode11, mode12, mode13, mode14];
+  mode10.begin = r'\\[\s\S]';
+  mode10.relevance = 0;
+  mode11.begin = r"'''";
+  mode11.end = r"'''";
+  mode11.relevance = 10;
+  mode12.begin = r'"""';
+  mode12.end = r'"""';
+  mode12.relevance = 10;
+  mode13.begin = r'"';
+  mode13.end = r'"';
+  mode14.begin = r"'";
+  mode14.end = r"'";
+  mode15.scope = r'number';
+  mode15.relevance = 0;
+  mode15.variants = [mode16, mode17];
+  mode16.begin = r'([+-]+)?[\d]+_[\d_]+';
+  mode17.begin = r'\b\d+(\.\d+)?';
+  return Mode(
+    name: r'TOML, also INI',
+    aliases: [r'toml'],
+    caseInsensitive: true,
+    illegal: r'\S',
     contains: [
-      Mode(ref: '~contains~0'),
-      Mode(className: "section", begin: "\\[+", end: "\\]+"),
+      mode0,
+      Mode(scope: r'section', begin: r'\[+', end: r'\]+'),
       Mode(
-          begin: "^[a-z0-9\\[\\]_\\.-]+(?=\\s*=\\s*)",
-          className: "attr",
-          starts: Mode(end: "\$", contains: [
-            Mode(ref: '~contains~0'),
+        begin:
+            '(?:[A-Za-z0-9_-]+|"(\\\\"|[^"])*"|\'[^\']*\')(\\s*\\.\\s*(?:[A-Za-z0-9_-]+|"(\\\\"|[^"])*"|\'[^\']*\'))*(?=\\s*=\\s*[^#\\s])',
+        scope: r'attr',
+        starts: Mode(
+          end: r'$',
+          contains: [
+            mode0,
             Mode(
-                begin: "\\[",
-                end: "\\]",
-                contains: [
-                  Mode(ref: '~contains~0'),
-                  Mode(ref: '~contains~2~starts~contains~1~contains~1'),
-                  Mode(ref: '~contains~2~starts~contains~1~contains~2'),
-                  Mode(ref: '~contains~2~starts~contains~1~contains~3'),
-                  Mode(ref: '~contains~2~starts~contains~1~contains~4'),
-                  Mode(self: true)
-                ],
-                relevance: 0),
-            Mode(ref: '~contains~2~starts~contains~1~contains~1'),
-            Mode(ref: '~contains~2~starts~contains~1~contains~2'),
-            Mode(ref: '~contains~2~starts~contains~1~contains~3'),
-            Mode(ref: '~contains~2~starts~contains~1~contains~4')
-          ]))
-    ]);
+              begin: r'\[',
+              end: r'\]',
+              contains: [mode0, mode5, mode6, mode9, mode15, r'self'],
+              relevance: 0,
+            ),
+            mode5,
+            mode6,
+            mode9,
+            mode15,
+          ],
+        ),
+      ),
+    ],
+  );
+}

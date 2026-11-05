@@ -1,16 +1,19 @@
-// GENERATED CODE - DO NOT MODIFY BY HAND
+// GENERATED CODE - DO NOT MODIFY BY HAND.
+// ignore_for_file: file_names, non_constant_identifier_names
 
-// Not every language uses common_modes.
-// ignore_for_file: unused_import
+import '../highlight_core.dart';
 
-import '../src/mode.dart';
-import '../src/common_modes.dart';
-
-final shell = Mode(refs: {}, aliases: [
-  "console"
-], contains: [
-  Mode(
-      className: "meta",
-      begin: "^\\s{0,3}[/\\w\\d\\[\\]()@-]*[>%\$#]",
-      starts: Mode(end: "\$", subLanguage: ["bash"]))
-]);
+/// Highlight.js language definition for `shell`.
+Mode shell(Highlight hljs) {
+  return Mode(
+    name: r'Shell Session',
+    aliases: [r'console', r'shellsession'],
+    contains: [
+      Mode(
+        scope: r'meta.prompt',
+        begin: r'^\s{0,3}[/~\w\d[\]()@-]*[>%$#][ ]?',
+        starts: Mode(end: r'[^\\](?=\s*$)', subLanguage: r'bash'),
+      ),
+    ],
+  );
+}

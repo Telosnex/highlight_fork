@@ -1,6 +1,14 @@
-# highlight.dart
+# highlight_fork
 
-Syntax highlighting for Dart and Flutter, which supports lots of languages and themes.
+Syntax highlighting for Dart and Flutter, based on highlight.js 11.
+The default registry contains Telosnex's 38 grammars and 78 fence aliases.
+
+Version 0.8.0 migrates the legacy 0.7 engine to upstream master `696d9a4`.
+See [the core package guide](highlight/README.md) for the new API, continuation limits, and evaluation commands.
+
+Regenerate languages with `dart run tool/generate_languages.dart`.
+Regenerate themes with `dart run tool/generate_themes.dart`.
+The generators preserve the limited default registry and hand-ported Solidity/Vue grammars.
 
 [View gallery built with Flutter web](https://git-touch.github.io/highlight/)
 

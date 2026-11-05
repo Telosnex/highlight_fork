@@ -48,6 +48,8 @@ jobs:
             xargs dart format --output=none --set-exit-if-changed
       - run: dart analyze --fatal-infos
         working-directory: highlight
+      - run: dart run tool/generator_smoke_test.dart
+      - run: dart analyze tool
       - run: dart test -r expanded
         working-directory: highlight
       - run: flutter analyze --fatal-infos

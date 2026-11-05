@@ -1,59 +1,62 @@
-// GENERATED CODE - DO NOT MODIFY BY HAND
+// GENERATED CODE - DO NOT MODIFY BY HAND.
+// ignore_for_file: file_names, non_constant_identifier_names
 
-// Not every language uses common_modes.
-// ignore_for_file: unused_import
+import '../highlight_core.dart';
 
-import '../src/mode.dart';
-import '../src/common_modes.dart';
-
-final properties = Mode(
-    refs: {
-      '~contains~1~starts': Mode(
-          end: "([ \\t\\f]*[:=][ \\t\\f]*|[ \\t\\f]+)",
+/// Highlight.js language definition for `properties`.
+Mode properties(Highlight hljs) {
+  return Mode(
+    name: r'.properties',
+    disableAutodetect: true,
+    caseInsensitive: true,
+    illegal: r'\S',
+    contains: [
+      Mode(
+        scope: r'comment',
+        begin: r'^\s*[!#]',
+        end: r'$',
+        contains: [
+          Mode(
+            scope: r'doctag',
+            begin: r'[ ]*(?=(TODO|FIXME|NOTE|BUG|OPTIMIZE|HACK|XXX):)',
+            end: r'(TODO|FIXME|NOTE|BUG|OPTIMIZE|HACK|XXX):',
+            excludeBegin: true,
+            relevance: 0,
+          ),
+          Mode(
+            begin:
+                r"[ ]+((?:I|a|is|so|us|to|at|if|in|it|on|[A-Za-z]+['](d|ve|re|ll|t|s|n)|[A-Za-z]+[-][a-z]+|[A-Za-z][a-z]{2,})[.]?[:]?([.][ ]|[ ])){3}",
+          ),
+        ],
+      ),
+      Mode(
+        returnBegin: true,
+        variants: [
+          Mode(begin: r'([^\\:= \t\f\n]|\\.)+[ \t\f]*[:=][ \t\f]*'),
+          Mode(begin: r'([^\\:= \t\f\n]|\\.)+[ \t\f]+'),
+        ],
+        contains: [
+          Mode(
+            scope: r'attr',
+            begin: r'([^\\:= \t\f\n]|\\.)+',
+            endsParent: true,
+          ),
+        ],
+        starts: Mode(
+          end: r'([ \t\f]*[:=][ \t\f]*|[ \t\f]+)',
           relevance: 0,
           starts: Mode(
-              className: "string",
-              end: "\$",
-              relevance: 0,
-              contains: [Mode(begin: "\\\\\\n")])),
-    },
-    case_insensitive: true,
-    illegal: "\\S",
-    contains: [
-      Mode(className: "comment", begin: "^\\s*[!#]", end: "\$", contains: [
-        PHRASAL_WORDS_MODE,
-        Mode(
-            className: "doctag",
-            begin: "(?:TODO|FIXME|NOTE|BUG|XXX):",
-            relevance: 0)
-      ]),
-      Mode(
-          begin:
-              "([^\\\\\\W:= \\t\\f\\n]|\\\\.)+([ \\t\\f]*[:=][ \\t\\f]*|[ \\t\\f]+)",
-          returnBegin: true,
-          contains: [
-            Mode(
-                className: "attr",
-                begin: "([^\\\\\\W:= \\t\\f\\n]|\\\\.)+",
-                endsParent: true,
-                relevance: 0)
-          ],
-          starts: Mode(ref: '~contains~1~starts')),
-      Mode(
-          begin:
-              "([^\\\\:= \\t\\f\\n]|\\\\.)+([ \\t\\f]*[:=][ \\t\\f]*|[ \\t\\f]+)",
-          returnBegin: true,
-          relevance: 0,
-          contains: [
-            Mode(
-                className: "meta",
-                begin: "([^\\\\:= \\t\\f\\n]|\\\\.)+",
-                endsParent: true,
-                relevance: 0)
-          ],
-          starts: Mode(ref: '~contains~1~starts')),
-      Mode(
-          className: "attr",
-          relevance: 0,
-          begin: "([^\\\\:= \\t\\f\\n]|\\\\.)+[ \\t\\f]*\$")
-    ]);
+            scope: r'string',
+            end: r'$',
+            relevance: 0,
+            contains: [
+              Mode(begin: r'\\\\'),
+              Mode(begin: r'\\\n'),
+            ],
+          ),
+        ),
+      ),
+      Mode(scope: r'attr', begin: r'([^\\:= \t\f\n]|\\.)+[ \t\f]*$'),
+    ],
+  );
+}

@@ -1,20 +1,23 @@
-// GENERATED CODE - DO NOT MODIFY BY HAND
+// GENERATED CODE - DO NOT MODIFY BY HAND.
+// ignore_for_file: file_names, non_constant_identifier_names
 
-// Not every language uses common_modes.
-// ignore_for_file: unused_import
+import '../highlight_core.dart';
 
-import '../src/mode.dart';
-import '../src/common_modes.dart';
-
-final mojolicious = Mode(refs: {}, subLanguage: [
-  "xml"
-], contains: [
-  Mode(className: "meta", begin: "^__(END|DATA)__\$"),
-  Mode(begin: "^\\s*%{1,2}={0,2}", end: "\$", subLanguage: ["perl"]),
-  Mode(
-      begin: "<%{1,2}={0,2}",
-      end: "={0,1}%>",
-      subLanguage: ["perl"],
-      excludeBegin: true,
-      excludeEnd: true)
-]);
+/// Highlight.js language definition for `mojolicious`.
+Mode mojolicious(Highlight hljs) {
+  return Mode(
+    name: r'Mojolicious',
+    subLanguage: r'xml',
+    contains: [
+      Mode(scope: r'meta', begin: r'^__(END|DATA)__$'),
+      Mode(begin: r'^\s*%{1,2}={0,2}', end: r'$', subLanguage: r'perl'),
+      Mode(
+        begin: r'<%{1,2}={0,2}',
+        end: r'={0,1}%>',
+        subLanguage: r'perl',
+        excludeBegin: true,
+        excludeEnd: true,
+      ),
+    ],
+  );
+}

@@ -1,127 +1,150 @@
-// GENERATED CODE - DO NOT MODIFY BY HAND
+// GENERATED CODE - DO NOT MODIFY BY HAND.
+// ignore_for_file: file_names, non_constant_identifier_names
 
-// Not every language uses common_modes.
-// ignore_for_file: unused_import
+import '../highlight_core.dart';
 
-import '../src/mode.dart';
-import '../src/common_modes.dart';
-
-final moonscript = Mode(
-    refs: {
-      '~contains~6~contains~1': Mode(
-          className: "params",
-          begin: "\\([^\\(]",
-          returnBegin: true,
-          contains: [
-            Mode(begin: "\\(", end: "\\)", keywords: {
-              "keyword":
-                  "if then not for in while do return else elseif break continue switch and or unless when class extends super local import export from using",
-              "literal": "true false nil",
-              "built_in":
-                  "_G _VERSION assert collectgarbage dofile error getfenv getmetatable ipairs load loadfile loadstring module next pairs pcall print rawequal rawget rawset require select setfenv setmetatable tonumber tostring type unpack xpcall coroutine debug io math os package string table"
-            }, contains: [
-              Mode(self: true),
-              Mode(ref: '~contains~0'),
-              Mode(ref: '~contains~1'),
-              Mode(ref: '~contains~1~variants~1~contains~1~contains~2'),
-              Mode(ref: '~contains~1~variants~1~contains~1~contains~3'),
-              Mode(ref: '~contains~1~variants~1~contains~1~contains~4')
-            ])
-          ]),
-      '~contains~6~contains~0': Mode(
-          className: "title",
-          begin: "[A-Za-z\$_][0-9A-Za-z\$_]*",
-          relevance: 0),
-      '~contains~1~variants~1~contains~1~contains~4':
-          Mode(begin: "[a-zA-Z]\\w*\\\\[a-zA-Z]\\w*"),
-      '~contains~1~variants~1~contains~1~contains~3':
-          Mode(begin: "@[a-zA-Z]\\w*"),
-      '~contains~1~variants~1~contains~1~contains~2':
-          Mode(className: "built_in", begin: "@__[a-zA-Z]\\w*"),
-      '~contains~1': Mode(className: "string", variants: [
-        Mode(begin: "'", end: "'", contains: [BACKSLASH_ESCAPE]),
-        Mode(begin: "\"", end: "\"", contains: [
-          BACKSLASH_ESCAPE,
-          Mode(className: "subst", begin: "#\\{", end: "}", keywords: {
-            "keyword":
-                "if then not for in while do return else elseif break continue switch and or unless when class extends super local import export from using",
-            "literal": "true false nil",
-            "built_in":
-                "_G _VERSION assert collectgarbage dofile error getfenv getmetatable ipairs load loadfile loadstring module next pairs pcall print rawequal rawget rawset require select setfenv setmetatable tonumber tostring type unpack xpcall coroutine debug io math os package string table"
-          }, contains: [
-            Mode(ref: '~contains~0'),
-            Mode(ref: '~contains~1'),
-            Mode(ref: '~contains~1~variants~1~contains~1~contains~2'),
-            Mode(ref: '~contains~1~variants~1~contains~1~contains~3'),
-            Mode(ref: '~contains~1~variants~1~contains~1~contains~4')
-          ])
-        ])
-      ]),
-      '~contains~0': Mode(
-          className: "number",
-          begin:
-              "(-?)(\\b0[xX][a-fA-F0-9]+|(\\b\\d+(\\.\\d*)?|\\.\\d+)([eE][-+]?\\d+)?)",
-          relevance: 0,
-          starts: Mode(end: "(\\s*/)?", relevance: 0)),
-    },
-    aliases: ["moon"],
+/// Highlight.js language definition for `moonscript`.
+Mode moonscript(Highlight hljs) {
+  final Mode mode0 = Mode();
+  final Mode mode1 = Mode();
+  final Mode mode2 = Mode();
+  final Mode mode3 = Mode();
+  final Mode mode4 = Mode();
+  final Mode mode5 = Mode();
+  final Mode mode6 = Mode();
+  final Mode mode7 = Mode();
+  final Mode mode8 = Mode();
+  final Mode mode9 = Mode();
+  final Mode mode10 = Mode();
+  final Mode mode11 = Mode();
+  final Mode mode12 = Mode();
+  mode0.scope = r'number';
+  mode0.begin =
+      r'(-?)(\b0[xX][a-fA-F0-9]+|(\b\d+(\.\d*)?|\.\d+)([eE][-+]?\d+)?)';
+  mode0.relevance = 0;
+  mode0.starts = mode1;
+  mode1.end = r'(\s*/)?';
+  mode1.relevance = 0;
+  mode2.scope = r'string';
+  mode2.variants = [mode3, mode5];
+  mode3.begin = r"'";
+  mode3.end = r"'";
+  mode3.contains = [mode4];
+  mode4.begin = r'\\[\s\S]';
+  mode4.relevance = 0;
+  mode5.begin = r'"';
+  mode5.end = r'"';
+  mode5.contains = [mode4, mode6];
+  mode6.scope = r'subst';
+  mode6.begin = r'#\{';
+  mode6.end = r'\}';
+  mode6.keywords = {
+    r'keyword':
+        r'if then not for in while do return else elseif break continue switch and or unless when class extends super local import export from using',
+    r'literal': r'true false nil',
+    r'built_in':
+        r'_G _VERSION assert collectgarbage dofile error getfenv getmetatable ipairs load loadfile loadstring module next pairs pcall print rawequal rawget rawset require select setfenv setmetatable tonumber tostring type unpack xpcall coroutine debug io math os package string table',
+  };
+  mode6.contains = [mode0, mode2, mode7, mode8, mode9];
+  mode7.scope = r'built_in';
+  mode7.begin = r'@__[a-zA-Z]\w*';
+  mode8.begin = r'@[a-zA-Z]\w*';
+  mode9.begin = r'[a-zA-Z]\w*\\[a-zA-Z]\w*';
+  mode10.scope = r'title';
+  mode10.begin = r'[A-Za-z$_][0-9A-Za-z$_]*';
+  mode10.relevance = 0;
+  mode11.scope = r'params';
+  mode11.begin = r'\([^\(]';
+  mode11.returnBegin = true;
+  mode11.contains = [mode12];
+  mode12.begin = r'\(';
+  mode12.end = r'\)';
+  mode12.keywords = {
+    r'keyword':
+        r'if then not for in while do return else elseif break continue switch and or unless when class extends super local import export from using',
+    r'literal': r'true false nil',
+    r'built_in':
+        r'_G _VERSION assert collectgarbage dofile error getfenv getmetatable ipairs load loadfile loadstring module next pairs pcall print rawequal rawget rawset require select setfenv setmetatable tonumber tostring type unpack xpcall coroutine debug io math os package string table',
+  };
+  mode12.contains = [r'self', mode0, mode2, mode7, mode8, mode9];
+  return Mode(
+    name: r'MoonScript',
+    aliases: [r'moon'],
     keywords: {
-      "keyword":
-          "if then not for in while do return else elseif break continue switch and or unless when class extends super local import export from using",
-      "literal": "true false nil",
-      "built_in":
-          "_G _VERSION assert collectgarbage dofile error getfenv getmetatable ipairs load loadfile loadstring module next pairs pcall print rawequal rawget rawset require select setfenv setmetatable tonumber tostring type unpack xpcall coroutine debug io math os package string table"
+      r'keyword':
+          r'if then not for in while do return else elseif break continue switch and or unless when class extends super local import export from using',
+      r'literal': r'true false nil',
+      r'built_in':
+          r'_G _VERSION assert collectgarbage dofile error getfenv getmetatable ipairs load loadfile loadstring module next pairs pcall print rawequal rawget rawset require select setfenv setmetatable tonumber tostring type unpack xpcall coroutine debug io math os package string table',
     },
-    illegal: "\\/\\*",
+    illegal: r'\/\*',
     contains: [
-      Mode(ref: '~contains~0'),
-      Mode(ref: '~contains~1'),
-      Mode(ref: '~contains~1~variants~1~contains~1~contains~2'),
-      Mode(ref: '~contains~1~variants~1~contains~1~contains~3'),
-      Mode(ref: '~contains~1~variants~1~contains~1~contains~4'),
-      Mode(className: "comment", begin: "--", end: "\$", contains: [
-        PHRASAL_WORDS_MODE,
-        Mode(
-            className: "doctag",
-            begin: "(?:TODO|FIXME|NOTE|BUG|XXX):",
-            relevance: 0)
-      ]),
+      mode0,
+      mode2,
+      mode7,
+      mode8,
+      mode9,
       Mode(
-          className: "function",
-          begin:
-              "^\\s*[A-Za-z\$_][0-9A-Za-z\$_]*\\s*=\\s*(\\(.*\\))?\\s*\\B[-=]>",
-          end: "[-=]>",
-          returnBegin: true,
-          contains: [
-            Mode(ref: '~contains~6~contains~0'),
-            Mode(ref: '~contains~6~contains~1')
-          ]),
-      Mode(begin: "[\\(,:=]\\s*", relevance: 0, contains: [
-        Mode(
-            className: "function",
-            begin: "(\\(.*\\))?\\s*\\B[-=]>",
-            end: "[-=]>",
+        scope: r'comment',
+        begin: r'--',
+        end: r'$',
+        contains: [
+          Mode(
+            scope: r'doctag',
+            begin: r'[ ]*(?=(TODO|FIXME|NOTE|BUG|OPTIMIZE|HACK|XXX):)',
+            end: r'(TODO|FIXME|NOTE|BUG|OPTIMIZE|HACK|XXX):',
+            excludeBegin: true,
+            relevance: 0,
+          ),
+          Mode(
+            begin:
+                r"[ ]+((?:I|a|is|so|us|to|at|if|in|it|on|[A-Za-z]+['](d|ve|re|ll|t|s|n)|[A-Za-z]+[-][a-z]+|[A-Za-z][a-z]{2,})[.]?[:]?([.][ ]|[ ])){3}",
+          ),
+        ],
+      ),
+      Mode(
+        scope: r'function',
+        begin: r'^\s*[A-Za-z$_][0-9A-Za-z$_]*\s*=\s*(\(.*\)\s*)?\B[-=]>',
+        end: r'[-=]>',
+        returnBegin: true,
+        contains: [mode10, mode11],
+      ),
+      Mode(
+        begin: r'[\(,:=]\s*',
+        relevance: 0,
+        contains: [
+          Mode(
+            scope: r'function',
+            begin: r'(\(.*\)\s*)?\B[-=]>',
+            end: r'[-=]>',
             returnBegin: true,
-            contains: [Mode(ref: '~contains~6~contains~1')])
-      ]),
+            contains: [mode11],
+          ),
+        ],
+      ),
       Mode(
-          className: "class",
-          beginKeywords: "class",
-          end: "\$",
-          illegal: "[:=\"\\[\\]]",
-          contains: [
-            Mode(
-                beginKeywords: "extends",
-                endsWithParent: true,
-                illegal: "[:=\"\\[\\]]",
-                contains: [Mode(ref: '~contains~6~contains~0')]),
-            Mode(ref: '~contains~6~contains~0')
-          ]),
+        scope: r'class',
+        beginKeywords: r'class',
+        end: r'$',
+        illegal: r'[:="\[\]]',
+        contains: [
+          Mode(
+            beginKeywords: r'extends',
+            endsWithParent: true,
+            illegal: r'[:="\[\]]',
+            contains: [mode10],
+          ),
+          mode10,
+        ],
+      ),
       Mode(
-          className: "name",
-          begin: "[A-Za-z\$_][0-9A-Za-z\$_]*:",
-          end: ":",
-          returnBegin: true,
-          returnEnd: true,
-          relevance: 0)
-    ]);
+        scope: r'name',
+        begin: r'[A-Za-z$_][0-9A-Za-z$_]*:',
+        end: r':',
+        returnBegin: true,
+        returnEnd: true,
+        relevance: 0,
+      ),
+    ],
+  );
+}

@@ -4,6 +4,16 @@ import 'package:flutter_highlight/themes/github.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  testWidgets('HighlightView preserves unregistered languages as plain text',
+      (tester) async {
+    await tester.pumpWidget(Directionality(
+      textDirection: TextDirection.ltr,
+      child: HighlightView('some code', language: '1c'),
+    ));
+    expect(tester.widget<RichText>(find.byType(RichText)).text.toPlainText(),
+        'some code');
+  });
+
   testWidgets('HighlightView styles tokens with the theme', (tester) async {
     await tester.pumpWidget(Directionality(
       textDirection: TextDirection.ltr,

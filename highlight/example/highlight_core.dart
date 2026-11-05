@@ -1,4 +1,4 @@
-import 'package:highlight_fork/highlight_core.dart' show highlight;
+import 'package:highlight_fork/highlight_core.dart' show hljs;
 import 'package:highlight_fork/languages/dart.dart';
 
 void main() {
@@ -7,9 +7,9 @@ void main() {
 }
 ''';
 
-  highlight.registerLanguage('dart', dart);
+  hljs.registerLanguage('dart', dart);
 
-  var result = highlight.parse(source, language: 'dart');
+  var result = hljs.highlight(source, language: 'dart');
   var html = result.toHtml();
   print(html); // HTML string
 }

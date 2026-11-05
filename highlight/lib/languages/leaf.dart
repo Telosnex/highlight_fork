@@ -1,29 +1,45 @@
-// GENERATED CODE - DO NOT MODIFY BY HAND
+// GENERATED CODE - DO NOT MODIFY BY HAND.
+// ignore_for_file: file_names, non_constant_identifier_names
 
-// Not every language uses common_modes.
-// ignore_for_file: unused_import
+import '../highlight_core.dart';
 
-import '../src/mode.dart';
-import '../src/common_modes.dart';
-
-final leaf = Mode(refs: {}, contains: [
-  Mode(
-      className: "function",
-      begin: "#+[A-Za-z_0-9]*\\(",
-      end: " {",
-      returnBegin: true,
-      excludeEnd: true,
-      contains: [
-        Mode(className: "keyword", begin: "#+"),
-        Mode(className: "title", begin: "[A-Za-z_][A-Za-z_0-9]*"),
-        Mode(
-            className: "params",
-            begin: "\\(",
-            end: "\\)",
-            endsParent: true,
-            contains: [
-              Mode(className: "string", begin: "\"", end: "\""),
-              Mode(className: "variable", begin: "[A-Za-z_][A-Za-z_0-9]*")
-            ])
-      ])
-]);
+/// Highlight.js language definition for `leaf`.
+Mode leaf(Highlight hljs) {
+  final Mode mode0 = Mode();
+  mode0.scope = r'params';
+  mode0.begin = r'\(';
+  mode0.end = r'\)(?=\:?)';
+  mode0.endsParent = true;
+  mode0.relevance = 7;
+  mode0.contains = [
+    Mode(
+      match: [r'([A-Za-z_][A-Za-z_0-9]*)?', r'(?=\()'],
+      scope: {1: r'keyword'},
+      contains: [mode0],
+    ),
+    Mode(scope: r'string', begin: r'"', end: r'"'),
+    Mode(scope: r'keyword', match: r'true|false|in'),
+    Mode(scope: r'variable', match: r'[A-Za-z_][A-Za-z_0-9]*'),
+    Mode(
+      scope: r'operator',
+      match: r'\+|\-|\*|\/|\%|\=\=|\=|\!|\>|\<|\&\&|\|\|',
+    ),
+  ];
+  return Mode(
+    name: r'Leaf',
+    contains: [
+      Mode(
+        match: [r'#+', r'([A-Za-z_][A-Za-z_0-9]*)?', r'(?=\()'],
+        scope: {1: r'punctuation', 2: r'keyword'},
+        starts: Mode(
+          contains: [Mode(match: r'\:', scope: r'punctuation')],
+        ),
+        contains: [mode0],
+      ),
+      Mode(
+        match: [r'#+', r'([A-Za-z_][A-Za-z_0-9]*)?', r':?'],
+        scope: {1: r'punctuation', 2: r'keyword', 3: r'punctuation'},
+      ),
+    ],
+  );
+}

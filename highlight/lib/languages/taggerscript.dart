@@ -1,28 +1,34 @@
-// GENERATED CODE - DO NOT MODIFY BY HAND
+// GENERATED CODE - DO NOT MODIFY BY HAND.
+// ignore_for_file: file_names, non_constant_identifier_names
 
-// Not every language uses common_modes.
-// ignore_for_file: unused_import
+import '../highlight_core.dart';
 
-import '../src/mode.dart';
-import '../src/common_modes.dart';
-
-final taggerscript = Mode(refs: {}, contains: [
-  Mode(
-      className: "comment",
-      begin: "\\\$noop\\(",
-      end: "\\)",
-      contains: [
-        Mode(
-            begin: "\\(",
-            end: "\\)",
-            contains: [Mode(self: true), Mode(begin: "\\\\.")])
-      ],
-      relevance: 10),
-  Mode(
-      className: "keyword",
-      begin: "\\\$(?!noop)[a-zA-Z][_a-zA-Z0-9]*",
-      end: "\\(",
-      excludeEnd: true),
-  Mode(className: "variable", begin: "%[_a-zA-Z0-9:]*", end: "%"),
-  Mode(className: "symbol", begin: "\\\\.")
-]);
+/// Highlight.js language definition for `taggerscript`.
+Mode taggerscript(Highlight hljs) {
+  return Mode(
+    name: r'Tagger Script',
+    contains: [
+      Mode(
+        scope: r'comment',
+        begin: r'\$noop\(',
+        end: r'\)',
+        contains: [
+          Mode(begin: r'\\[()]'),
+          Mode(
+            begin: r'\(',
+            end: r'\)',
+            contains: [
+              Mode(begin: r'\\[()]'),
+              r'self',
+            ],
+          ),
+        ],
+        relevance: 10,
+      ),
+      Mode(scope: r'keyword', begin: r'\$[_a-zA-Z0-9]+(?=\()'),
+      Mode(scope: r'variable', begin: r'%[_a-zA-Z0-9:]+%'),
+      Mode(scope: r'symbol', begin: r'\\[\\nt$%,()]'),
+      Mode(scope: r'symbol', begin: r'\\u[a-fA-F0-9]{4}'),
+    ],
+  );
+}

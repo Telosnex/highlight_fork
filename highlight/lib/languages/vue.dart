@@ -1,54 +1,30 @@
-// GENERATED CODE - DO NOT MODIFY BY HAND
+// Port of vendor/highlightjs-vue/vue.js (fe48d26), with attribute-order and
+// <script setup> support for contemporary single-file components.
+import '../highlight_core.dart';
 
-// Not every language uses common_modes.
-// ignore_for_file: unused_import
-
-import '../src/mode.dart';
-import '../src/common_modes.dart';
-
-final vue = Mode(refs: {}, subLanguage: [
-  "xml"
-], contains: [
-  Mode(
-      className: "comment",
-      begin: "<!--",
-      end: "-->",
-      contains: [
-        PHRASAL_WORDS_MODE,
-        Mode(
-            className: "doctag",
-            begin: "(?:TODO|FIXME|NOTE|BUG|XXX):",
-            relevance: 0)
-      ],
-      relevance: 10),
-  Mode(
-      begin: "^(\\s*)(<script>)",
-      end: "^(\\s*)(<\\/script>)",
-      subLanguage: ["javascript"],
-      excludeBegin: true,
-      excludeEnd: true),
-  Mode(
-      begin: "^(\\s*)(<script lang=[\"']ts[\"']>)",
-      end: "^(\\s*)(<\\/script>)",
-      subLanguage: ["typescript"],
-      excludeBegin: true,
-      excludeEnd: true),
-  Mode(
-      begin: "^(\\s*)(<style(\\sscoped)?>)",
-      end: "^(\\s*)(<\\/style>)",
-      subLanguage: ["css"],
-      excludeBegin: true,
-      excludeEnd: true),
-  Mode(
-      begin: "^(\\s*)(<style lang=[\"'](scss|sass)[\"'](\\sscoped)?>)",
-      end: "^(\\s*)(<\\/style>)",
-      subLanguage: ["scss"],
-      excludeBegin: true,
-      excludeEnd: true),
-  Mode(
-      begin: "^(\\s*)(<style lang=[\"']stylus[\"'](\\sscoped)?>)",
-      end: "^(\\s*)(<\\/style>)",
-      subLanguage: ["stylus"],
-      excludeBegin: true,
-      excludeEnd: true)
-]);
+Mode vue(Highlight hljs) {
+  Mode block(String tag, String language, [String? lang]) => Mode(
+    begin: lang == null
+        ? '<$tag\\b[^>]*>'
+        : '<$tag\\b(?=[^>]*\\blang\\s*=\\s*["\'](?:$lang)["\'])[^>]*>',
+    end: '</$tag\\s*>',
+    subLanguage: language,
+    excludeBegin: true,
+    excludeEnd: true,
+  );
+  return Mode(
+    name: 'Vue',
+    // Plain markup delegates to XML and receives the same relevance. Prefer
+    // XML on ties rather than claiming every XML/HTML/SVG document as Vue.
+    supersetOf: 'xml',
+    subLanguage: 'xml',
+    contains: [
+      hljs.COMMENT('<!--', '-->', Mode(relevance: 10)),
+      block('script', 'typescript', 'ts|typescript'),
+      block('script', 'javascript'),
+      block('style', 'scss', 'scss|sass'),
+      block('style', 'stylus', 'stylus'),
+      block('style', 'css'),
+    ],
+  );
+}
