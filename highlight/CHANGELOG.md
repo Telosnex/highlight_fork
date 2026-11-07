@@ -1,3 +1,8 @@
+## 1.0.0
+
+- First stable release.
+- The example has a name that pub.dev finds.
+
 ## 0.8.0
 
 Breaking highlight.js 11 migration.
