@@ -634,6 +634,7 @@ class Highlight {
     }
 
     processContinuations();
+    final ruleMatches = RuleMatchCache();
 
     try {
       final emitTokens = language.emitTokens;
@@ -653,7 +654,7 @@ class Highlight {
           if (matcher == null) break;
           matcher.lastIndex = index;
 
-          final match = matcher.exec(codeToHighlight);
+          final match = matcher.exec(codeToHighlight, ruleMatches);
           if (match == null) break;
 
           final matchIdx = match['index'] as int;

@@ -18,10 +18,16 @@ class MultiRegex {
   /// count plus one. Rule `n` owns the groups from `_ruleStarts[n]` up to,
   /// but not including, `_ruleStarts[n + 1]`.
   List<int> _ruleStarts = const [];
+  List<int> _groupCounts = const [];
 
-  MultiRegex(this.langRe);
+  /// The id of each rule's regex in [table].
+  final List<int> _ruleIds = [];
+  final RegexTable? table;
+
+  MultiRegex(this.langRe, [this.table]);
 
   void addRule(RegExp re, Map<String, dynamic> opts) {
+    _ruleIds.add(table?.idOf(re) ?? -1);
     opts['position'] = position++;
     matchIndexes[matchAt] = opts;
     regexes.add([opts, re]);
@@ -42,14 +48,35 @@ class MultiRegex {
       true,
     );
     _ruleStarts = [...matchIndexes.keys, matchAt];
+    _groupCounts = [
+      for (var i = 0; i + 1 < _ruleStarts.length; i++)
+        _ruleStarts[i + 1] - _ruleStarts[i] - 1,
+    ];
     lastIndex = 0;
   }
 
-  Map<String, dynamic>? exec(String s) {
+  Map<String, dynamic>? exec(String s, [RuleMatchCache? cache]) {
     final re = matcherRe;
     if (re == null || lastIndex > s.length) return null;
+    final from = lastIndex < 0 ? 0 : lastIndex;
+    if (_calls == 64) {
+      _calls = 32;
+      _scanned >>= 1;
+      _span >>= 1;
+    }
+    _calls++;
+    if (from >= _lastFrom) _span += from - _lastFrom;
+    _lastFrom = from;
+    if (cache != null &&
+        table != null &&
+        regexes.length > 1 &&
+        (debugRuleAtATime ??
+            _scanned > _calls * _sparseUnits && _scanned * 2 > _span)) {
+      return _execPerRule(s, from, cache);
+    }
 
-    final match = re.allMatches(s, lastIndex < 0 ? 0 : lastIndex).firstOrNull;
+    final match = re.allMatches(s, from).firstOrNull;
+    _scanned += (match?.start ?? s.length) - from;
     if (match == null) return null;
 
     // Exactly one rule matched: the one whose wrapping group took part. That
@@ -81,6 +108,99 @@ class MultiRegex {
       '0': lexeme,
     };
   }
+
+  // The joined regex is slow for each unit that it scans, because it tries
+  // every rule at every position. One regex for each rule scans faster, and
+  // [RuleMatchCache] keeps the match of a rule until the parse passes it. But
+  // a rule alone also searches text that a child mode would consume, and that
+  // search can cost more than it saves. So use the rules one at a time only
+  // while this mode scans far for each match (more than [_sparseUnits] units)
+  // and scans most of the text that the parse passes between its calls.
+  //
+  // The counts are a moving average. They continue from one parse to the
+  // next, which lets a line-by-line parse use them. Both ways give the same
+  // match, so the counts change only the speed.
+  static const _sparseUnits = 24;
+
+  /// For tests: true or false makes every matcher use one way.
+  static bool? debugRuleAtATime;
+  int _calls = 0;
+  int _scanned = 0;
+  int _span = 0;
+  int _lastFrom = 0;
+
+  /// The leftmost match of any rule at or after [from]; the first rule wins
+  /// at equal positions. This is what the joined regex gives.
+  Map<String, dynamic>? _execPerRule(String s, int from, RuleMatchCache cache) {
+    final table = this.table!;
+    if (!identical(cache._table, table)) cache._reset(table);
+    final starts = cache._starts;
+    final matches = cache._matches;
+    final ids = _ruleIds;
+    var best = -1;
+    var bestId = -1;
+    var bestStart = _noMatch;
+    for (var r = 0; r < ids.length; r++) {
+      final id = ids[r];
+      var start = starts[id];
+      if (start < from) {
+        final match = table.regexes[id].allMatches(s, from).firstOrNull;
+        matches[id] = match;
+        start = starts[id] = match?.start ?? _noMatch;
+      }
+      if (start < bestStart) {
+        best = r;
+        bestId = id;
+        bestStart = start;
+        // No later rule can win against a match at the scan position.
+        if (start == from) break;
+      }
+    }
+    _scanned += (best < 0 ? s.length : bestStart) - from;
+    if (best < 0) return null;
+    final match = matches[bestId]!;
+    final groups = List<String?>.generate(_groupCounts[best] + 1, match.group);
+    return <String, dynamic>{
+      ...regexes[best][0] as Map<String, dynamic>,
+      'index': bestStart,
+      '_match': match,
+      '_groups': groups,
+      '0': groups[0],
+    };
+  }
+}
+
+const _noMatch = 0x3fffffffffffffff;
+
+/// The distinct regexes of one compiled language. Equal sources share one
+/// [RegExp], so a rule that is in many modes has one id.
+class RegexTable {
+  final List<RegExp> regexes = [];
+  final _bySource = <String, RegExp>{};
+  final _ids = Map<RegExp, int>.identity();
+
+  RegExp intern(String source, RegExp Function() create) =>
+      _bySource[source] ??= create();
+
+  int idOf(RegExp re) => _ids[re] ??= () {
+    regexes.add(re);
+    return regexes.length - 1;
+  }();
+}
+
+/// The next match of each regex of a language in one source string. A parse
+/// makes one. The next match of a rule does not depend on the mode that asks,
+/// so all modes share the entries.
+class RuleMatchCache {
+  RegexTable? _table;
+  List<int> _starts = const [];
+  List<RegExpMatch?> _matches = const [];
+
+  void _reset(RegexTable table) {
+    _table = table;
+    _starts = List<int>.filled(table.regexes.length, -1);
+    _matches = List<RegExpMatch?>.filled(table.regexes.length, null);
+  }
 }
 
 class ResumableMultiRegex {
@@ -90,13 +210,14 @@ class ResumableMultiRegex {
   int lastIndex = 0;
   int regexIndex = 0;
   final RegExp Function(String, bool) langRe;
+  final RegexTable? table;
 
-  ResumableMultiRegex(this.langRe);
+  ResumableMultiRegex(this.langRe, [this.table]);
 
   MultiRegex getMatcher(int index) {
     if (multiRegexes.containsKey(index)) return multiRegexes[index]!;
 
-    final matcher = MultiRegex(langRe);
+    final matcher = MultiRegex(langRe, table);
     for (var i = index; i < rules.length; i++) {
       final rule = rules[i];
       matcher.addRule(rule[0] as RegExp, rule[1] as Map<String, dynamic>);
@@ -115,14 +236,17 @@ class ResumableMultiRegex {
   }
 
   void addRule(RegExp re, Map<String, dynamic> opts) {
+    // Give the id now. Matchers are built on first use, after a parse has
+    // sized its cache.
+    table?.idOf(re);
     rules.add([re, opts]);
     if (opts['type'] == 'begin') count++;
   }
 
-  Map<String, dynamic>? exec(String s) {
+  Map<String, dynamic>? exec(String s, [RuleMatchCache? cache]) {
     final m = getMatcher(regexIndex);
     m.lastIndex = lastIndex;
-    var result = m.exec(s);
+    var result = m.exec(s, cache);
 
     if (resumingScanAtSamePosition()) {
       if (result != null && result['index'] == lastIndex) {
@@ -130,7 +254,7 @@ class ResumableMultiRegex {
       } else {
         final m2 = getMatcher(0);
         m2.lastIndex = lastIndex + 1;
-        result = m2.exec(s);
+        result = m2.exec(s, cache);
       }
     }
 
@@ -147,9 +271,10 @@ class ResumableMultiRegex {
 
 ResumableMultiRegex buildModeRegex(
   Mode mode,
-  RegExp Function(String, bool) langRe,
-) {
-  final mm = ResumableMultiRegex(langRe);
+  RegExp Function(String, bool) langRe, [
+  RegexTable? table,
+]) {
+  final mm = ResumableMultiRegex(langRe, table);
 
   final contains = mode.contains ?? [];
   for (final term in contains) {
@@ -197,14 +322,18 @@ dynamic _expandOrCloneMode(Mode mode) {
 }
 
 Mode compileLanguage(Mode language) {
+  final table = RegexTable();
   RegExp langRe(String value, bool global) {
     final caseInsensitive = language.caseInsensitive == true;
     final unicodeRegex = language.unicodeRegex == true;
-    return RegExp(
+    return table.intern(
       value,
-      multiLine: true,
-      caseSensitive: !caseInsensitive,
-      unicode: unicodeRegex,
+      () => RegExp(
+        value,
+        multiLine: true,
+        caseSensitive: !caseInsensitive,
+        unicode: unicodeRegex,
+      ),
     );
   }
 
@@ -312,7 +441,7 @@ Mode compileLanguage(Mode language) {
       compileMode(mode.starts!, parent);
     }
 
-    mode.matcher = buildModeRegex(mode, langRe);
+    mode.matcher = buildModeRegex(mode, langRe, table);
     return mode;
   }
 
