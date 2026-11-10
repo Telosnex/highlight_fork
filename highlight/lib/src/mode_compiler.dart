@@ -265,6 +265,8 @@ class MultiRegex {
           s.codeUnitAt(pos - 1) & 0xfc00 == 0xd800) {
         continue;
       }
+      // See [FirstSet.second].
+      final surrogate = _unicode && unit & 0xf800 == 0xd800;
       final next = pos + 1 < length ? s.codeUnitAt(pos + 1) : -1;
       final nextBucket = next < 0
           ? FirstSet.end
@@ -273,7 +275,7 @@ class MultiRegex {
           : FirstSet.nonAscii;
       for (var i = 0; i < rules.length; i++) {
         final rule = rules[i];
-        if (seconds[rule][nextBucket] == 0) continue;
+        if (seconds[rule][nextBucket] == 0 && !surrogate) continue;
         final needs = requires[rule];
         if (needs != 0) {
           final before = pos > 0 ? s.codeUnitAt(pos - 1) : -1;

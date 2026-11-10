@@ -22,6 +22,10 @@ class FirstSet {
   final Uint8List buckets;
 
   /// The buckets of the code unit after the first one.
+  ///
+  /// With the Unicode flag, a part of the regex can match a surrogate pair,
+  /// which is two units. Then [second] is correct only after a first unit
+  /// that is not a surrogate.
   final Uint8List second;
   final int requires;
 
@@ -76,8 +80,7 @@ class FirstSet {
           ? node.requires & ~wordBoundary
           : node.requires;
       // A match of fewer than two units says nothing about the next unit.
-      // With the Unicode flag, one part of the regex can match two units.
-      final second = unicode || node.length1 || !_isEmptySet(node.empty)
+      final second = node.length1 || !_isEmptySet(node.empty)
           ? _everySecond
           : node.second;
       return FirstSet._(

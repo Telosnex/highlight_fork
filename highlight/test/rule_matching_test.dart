@@ -56,7 +56,10 @@ void main() {
   test('every grammar agrees on its sample and on other languages', () {
     final all = hi.Highlight();
     registerAllLanguages(all);
-    final other = corpus.values.map((source) => sized(source, 512)).join();
+    // The last line has surrogate pairs and letters that fold to ASCII.
+    final other =
+        '${corpus.values.map((source) => sized(source, 512)).join()}\n'
+        'x = "😀" + f\'😀{y}\' # 😀a 😀"b" é ſ \u212a\n';
     final samples = vendorFixtureDirectory('detect');
     for (final language in all.listLanguages()) {
       final sample = File('${samples.path}/$language/default.txt');

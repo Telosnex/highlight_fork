@@ -37,7 +37,7 @@ int requires(String source) =>
     FirstSet.of(source, caseSensitive: true, unicode: false).requires;
 
 /// Null when [set] permits a match at [pos], else the reason.
-String? refusal(FirstSet set, String text, int pos) {
+String? refusal(FirstSet set, String text, int pos, {bool unicode = false}) {
   final unit = pos < text.length ? text.codeUnitAt(pos) : -1;
   final bucket = unit < 0
       ? FirstSet.end
@@ -51,7 +51,10 @@ String? refusal(FirstSet set, String text, int pos) {
       : next < 128
       ? next
       : FirstSet.nonAscii;
-  if (set.second[nextBucket] == 0) return 'second bucket $nextBucket';
+  final surrogate = unicode && unit & 0xf800 == 0xd800;
+  if (set.second[nextBucket] == 0 && !surrogate) {
+    return 'second bucket $nextBucket';
+  }
   final before = pos > 0 ? text.codeUnitAt(pos - 1) : -1;
   bool word(int u) => u >= 0 && u < 128 && isWordUnit(u);
   if (set.requires & FirstSet.wordBoundary != 0 && word(before) == word(unit)) {
@@ -208,7 +211,7 @@ void main() {
     registerAllLanguages(hljs);
     final samples = vendorFixtureDirectory('detect');
     const symbols =
-        'a_1 Z9\t"x" \'y\' `z` é\u2028ß ſs \u212ak İiı {[(<>)]} #!/\$%^&*-+=|\\:;,.?~@ \r\n'
+        'a_1 Z9\t"x" \'y\' `z` é\u2028ß ſs \u212ak İiı 😀x😀"😀\' {[(<>)]} #!/\$%^&*-+=|\\:;,.?~@ \r\n'
         '  - 0x1F 1.5e3\n';
     var regexes = 0;
     var runs = 0;
@@ -258,7 +261,7 @@ void main() {
           }
         }
         for (var pos = 0; pos <= text.length; pos++) {
-          final refused = refusal(set, text, pos);
+          final refused = refusal(set, text, pos, unicode: re.isUnicode);
           if (refused != null && re.matchAsPrefix(text, pos) != null) {
             fail('$name: /${re.pattern}/ matches at $pos, set: $refused');
           }
