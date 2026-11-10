@@ -14,6 +14,8 @@ analyzer:
     - macos/**
     - linux/**
     - lib/languages/**
+    # A frozen copy of 0.8.0, the baseline of test/perf/full_parse_perf.dart.
+    - test/perf/baseline/**
 
 linter:
   rules:
