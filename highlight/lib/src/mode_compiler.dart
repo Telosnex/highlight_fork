@@ -77,7 +77,22 @@ class MultiRegex {
   final List<MatchRule> _rules = [];
   final List<RegExp> _regexes = [];
   int matchAt = 1;
-  RegExp? matcherRe;
+  RegExp? _matcherRe;
+  bool _compiled = false;
+
+  /// The regex of all rules, joined with `|`. Null when there are no rules.
+  /// It is built on first use: a matcher that reads the source itself, see
+  /// [_execDispatch], does not need it.
+  RegExp? get matcherRe {
+    if (!_compiled || _regexes.isEmpty) return null;
+    return _matcherRe ??= langRe(
+      regex.rewriteBackreferences([
+        for (final re in _regexes) re.pattern,
+      ], joinWith: '|'),
+      true,
+    );
+  }
+
   int lastIndex = 0;
   final RegExp Function(String, bool) langRe;
 
@@ -103,25 +118,22 @@ class MultiRegex {
   }
 
   void compile() {
-    if (_regexes.isEmpty) {
-      matcherRe = null;
-      return;
-    }
-    matcherRe = langRe(
-      regex.rewriteBackreferences([
-        for (final re in _regexes) re.pattern,
-      ], joinWith: '|'),
-      true,
-    );
+    _compiled = true;
+    if (_regexes.isEmpty) return;
     _ruleStarts.add(matchAt);
     _testOrder = List<int>.generate(_rules.length, (i) => i);
     lastIndex = 0;
   }
 
   RuleMatch? exec(String s, [RuleMatchCache? cache]) {
-    final re = matcherRe;
-    if (re == null || lastIndex > s.length) return null;
+    if (!_compiled || _regexes.isEmpty || lastIndex > s.length) return null;
     final from = lastIndex < 0 ? 0 : lastIndex;
+    final table = this.table;
+    final strategy = debugStrategy;
+    if (table != null &&
+        (strategy == null ? !_isWeb : strategy == MatchStrategy.dispatch)) {
+      return _execDispatch(s, from, table, cache);
+    }
     if (_calls == 64) {
       _calls = 32;
       _scanned >>= 1;
@@ -130,22 +142,16 @@ class MultiRegex {
     _calls++;
     if (from >= _lastFrom) _span += from - _lastFrom;
     _lastFrom = from;
-    final table = this.table;
-    if (table != null) {
-      final strategy = debugStrategy;
-      if (strategy == null ? !_isWeb : strategy == MatchStrategy.dispatch) {
-        return _execDispatch(s, from, table, cache);
-      }
-      if (cache != null &&
-          _rules.length > 1 &&
-          (strategy == null
-              ? _scanned > _calls * _sparseUnits && _scanned * 2 > _span
-              : strategy == MatchStrategy.ruleAtATime)) {
-        return _execPerRule(s, from, cache);
-      }
+    if (table != null &&
+        cache != null &&
+        _rules.length > 1 &&
+        (strategy == null
+            ? _scanned > _calls * _sparseUnits && _scanned * 2 > _span
+            : strategy == MatchStrategy.ruleAtATime)) {
+      return _execPerRule(s, from, cache);
     }
 
-    final match = re.allMatches(s, from).firstOrNull;
+    final match = matcherRe!.allMatches(s, from).firstOrNull;
     _scanned += (match?.start ?? s.length) - from;
     if (match == null) return null;
 
