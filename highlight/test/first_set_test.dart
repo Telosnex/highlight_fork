@@ -139,6 +139,116 @@ void main() {
     }
   });
 
+  group('the prefix test', () {
+    // The positions of [text] where the test permits a match.
+    List<int> permitted(
+      String source,
+      String text, {
+      bool caseSensitive = true,
+    }) {
+      final prefix = FirstSet.of(
+        source,
+        caseSensitive: caseSensitive,
+        unicode: false,
+      ).prefix;
+      return [
+        for (var pos = 0; pos <= text.length; pos++)
+          if (!(prefix?.rejects(text, pos) ?? false)) pos,
+      ];
+    }
+
+    // The positions where the regex matches.
+    List<int> matches(String source, String text, {bool caseSensitive = true}) {
+      final re = RegExp(source, multiLine: true, caseSensitive: caseSensitive);
+      return [
+        for (var pos = 0; pos <= text.length; pos++)
+          if (re.matchAsPrefix(text, pos) != null) pos,
+      ];
+    }
+
+    test('is exact for sets, sequences, alternatives and repeats', () {
+      const text = 'foo(a) bar <T> (x) => y; a::b c_t if( x ?: 1 aab ab b';
+      for (final source in [
+        r'[a-z]\w*\(',
+        r'[a-z]\w*\s*\(',
+        r'(?:[a-z]\w*::)?[a-z]\w*',
+        r'(\([^()]*\)|[a-z]\w*)\s*=>',
+        r'[a-z\d_]*_t',
+        r'(a|ab)+b',
+        r'a?a?ab',
+        r'(a*)*b',
+        r'(|a)b',
+        r'x|=>|;',
+        r'.+;',
+        r'[^;]*;',
+        r'\w+ ?\?:',
+      ]) {
+        expect(permitted(source, text), matches(source, text), reason: source);
+      }
+      expect(
+        permitted('if|FOO', 'IF foo x', caseSensitive: false),
+        matches('if|FOO', 'IF foo x', caseSensitive: false),
+      );
+    });
+
+    test('uses a lookahead at the end', () {
+      const text = 'a: b ?: c : d';
+      for (final source in [
+        r'[a-z](?=:)',
+        r'[a-z](?=\s*\?:)',
+        r'[a-z](?=(:| \?))',
+      ]) {
+        expect(permitted(source, text), matches(source, text), reason: source);
+      }
+    });
+
+    test('permits more for the parts that it does not know', () {
+      const text = 'aa ab abab a1 é a\u00e9 if(x) ifx';
+      for (final source in [
+        r'(a)\1',
+        r'a{2}',
+        r'(ab){2}',
+        r'a(?!b)',
+        r'a(?=b)b',
+        r'(?<=a)b',
+        r'a\b',
+        r'a$',
+        r'^a',
+        r'\bif\b(?!x)',
+        r'aé',
+        r'a[^b]',
+        r'\p{L}b',
+      ]) {
+        final permits = permitted(source, text);
+        for (final pos in matches(source, text)) {
+          expect(permits, contains(pos), reason: source);
+        }
+      }
+      // An assertion in the middle is ignored.
+      expect(permitted(r'a(?!c)\w', 'ab ac a'), [0, 3]);
+      // A unit outside ASCII ends the test.
+      expect(permitted(r'ab', 'aé ac'), [0, 1]);
+    });
+
+    test('there is none when the first unit decides nothing', () {
+      for (final source in [r'\B|\b', r'a*', r'(?!a)', r'$']) {
+        expect(
+          FirstSet.of(source, caseSensitive: true, unicode: false).prefix,
+          isNull,
+          reason: source,
+        );
+      }
+    });
+
+    test('a regex with too many states permits what it cannot check', () {
+      final source = '${'ab' * 40}c';
+      final text = '${'ab' * 40}d ${'ab' * 40}c ab';
+      final permits = permitted(source, text);
+      expect(permits, containsAll(matches(source, text)));
+      expect(permits, isNot(contains(text.length - 2)));
+    });
+  });
+
   test('case', () {
     expect(buckets('a', caseSensitive: false), units('Aa'));
     // With `iu`, `k` also matches the Kelvin sign.

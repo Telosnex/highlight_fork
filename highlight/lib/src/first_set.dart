@@ -47,6 +47,10 @@ class FirstSet {
   /// unit, [buckets] is exact. Else false.
   final bool single;
 
+  /// The start of the regex as steps, or null when that gives no more than
+  /// [buckets].
+  final Prefix? prefix;
+
   FirstSet._(
     this.buckets,
     this.second,
@@ -56,6 +60,7 @@ class FirstSet {
     this.literal,
     this.single = false,
     this.runOnly = false,
+    this.prefix,
   ]);
 
   /// A set that permits every position. It is correct for every regex.
@@ -92,10 +97,252 @@ class FirstSet {
         caseSensitive ? _literal(source) : null,
         parser.single,
         parser.runOnly,
+        Prefix._of(source, !caseSensitive, unicode),
       );
     } on FormatException {
       return FirstSet.all();
     }
+  }
+}
+
+/// A fast test for "the regex cannot match here".
+///
+/// It is an automaton with one state for each unit that the regex reads:
+/// `(a|b)\w*\(` has four states. It follows all paths at once, so it does
+/// not go back in the source. It knows sets of ASCII units, sequences,
+/// alternatives, groups and repeats.
+///
+/// For each other part, it permits more than the regex does. It ignores an
+/// assertion (`\b`, `(?!...)`). After a part that it does not know, such
+/// as a backreference, it permits every text. So [rejects] can be false at
+/// a position where the regex does not match, but it is never true at a
+/// position where the regex matches.
+class Prefix {
+  /// For each bucket, the states that can read a unit of that bucket. Bit
+  /// `n` is state `n`.
+  final List<int> _reads;
+
+  /// For each state, the states that can read the next unit.
+  final List<int> _after;
+
+  /// The states that can read the first unit.
+  final int _first;
+
+  /// The states that end the test: when one can read the unit, the regex
+  /// can match. One of them is the end of the regex.
+  final int _open;
+
+  Prefix._(this._reads, this._after, this._first, this._open);
+
+  static Prefix? _of(String source, bool ignoreCase, bool unicode) {
+    final builder = _PrefixBuilder(_Parser(source, ignoreCase, unicode));
+    final all = builder.disjunction();
+    if (builder.parser.i != source.length) throw const FormatException();
+    final part = builder.sequence(all, builder.any());
+    // No test when the first unit decides nothing.
+    if (part.first & 1 != 0) return null;
+    final reads = List<int>.filled(FirstSet.bucketCount, 0);
+    for (var state = 0; state < builder.sets.length; state++) {
+      final set = builder.sets[state];
+      // A state that does not end the test reads only ASCII units.
+      final count = builder.open & (1 << state) != 0
+          ? FirstSet.bucketCount
+          : 128;
+      for (var bucket = 0; bucket < count; bucket++) {
+        if (set[bucket] != 0) reads[bucket] |= 1 << state;
+      }
+    }
+    return Prefix._(reads, builder.after, part.first, builder.open);
+  }
+
+  /// True when the regex cannot match at [pos] of [s].
+  bool rejects(String s, int pos) {
+    final reads = _reads;
+    final after = _after;
+    final open = _open;
+    final length = s.length;
+    var active = _first;
+    for (var p = pos; ; p++) {
+      if (p >= length) return active & reads[FirstSet.end] & open == 0;
+      final unit = s.codeUnitAt(p);
+      // The sets are exact only for ASCII units.
+      if (unit >= 128) return false;
+      var hit = active & reads[unit];
+      if (hit & open != 0) return false;
+      if (hit == 0) return true;
+      active = 0;
+      do {
+        final low = hit & -hit;
+        active |= after[low.bitLength - 1];
+        hit ^= low;
+      } while (hit != 0);
+    }
+  }
+}
+
+/// A part of a regex in a [Prefix]: the states that can read its first
+/// unit, the states that can read its last unit, and whether it can be
+/// empty.
+class _Part {
+  final int first;
+  final int last;
+  final bool canBeEmpty;
+  const _Part(this.first, this.last, this.canBeEmpty);
+}
+
+class _PrefixBuilder {
+  final _Parser parser;
+
+  /// State 0 reads every unit and ends the test.
+  final sets = <Uint8List>[_all()];
+  final after = <int>[0];
+  int open = 1;
+
+  _PrefixBuilder(this.parser);
+
+  // A bit operation in JavaScript has 32 bits.
+  static const _maxStates = identical(0, 0.0) ? 30 : 62;
+
+  static const _empty = _Part(0, 0, true);
+
+  String get _src => parser.src;
+
+  _Part any() => const _Part(1, 0, false);
+
+  /// A state that reads one unit of [set]. With [ends], it ends the test.
+  _Part _state(Uint8List set, {bool ends = false}) {
+    if (sets.length == _maxStates) return any();
+    final bit = 1 << sets.length;
+    sets.add(set);
+    after.add(0);
+    if (ends) {
+      open |= bit;
+      return _Part(bit, 0, false);
+    }
+    return _Part(bit, bit, false);
+  }
+
+  void _link(int from, int to) {
+    for (var state = 0; state < after.length; state++) {
+      if (from & (1 << state) != 0) after[state] |= to;
+    }
+  }
+
+  _Part sequence(_Part a, _Part b) {
+    _link(a.last, b.first);
+    return _Part(
+      a.canBeEmpty ? a.first | b.first : a.first,
+      b.canBeEmpty ? a.last | b.last : b.last,
+      a.canBeEmpty && b.canBeEmpty,
+    );
+  }
+
+  _Part disjunction() {
+    var part = _alternative();
+    while (parser.i < _src.length && _src.codeUnitAt(parser.i) == 0x7c) {
+      parser.i++;
+      final other = _alternative();
+      part = _Part(
+        part.first | other.first,
+        part.last | other.last,
+        part.canBeEmpty || other.canBeEmpty,
+      );
+    }
+    return part;
+  }
+
+  bool get _atEndOfAlternative {
+    if (parser.i >= _src.length) return true;
+    final c = _src.codeUnitAt(parser.i);
+    return c == 0x7c /* | */ || c == 0x29 /* ) */;
+  }
+
+  _Part _alternative() {
+    var part = _empty;
+    while (!_atEndOfAlternative) {
+      part = sequence(part, _term());
+    }
+    return part;
+  }
+
+  _Part _term() {
+    final atom = _atom();
+    if (parser.i >= _src.length) return atom;
+    final c = _src.codeUnitAt(parser.i);
+    int min;
+    var repeats = true;
+    if (c == 0x2a /* * */ ) {
+      min = 0;
+      parser.i++;
+    } else if (c == 0x2b /* + */ ) {
+      min = 1;
+      parser.i++;
+    } else if (c == 0x3f /* ? */ ) {
+      min = 0;
+      repeats = false;
+      parser.i++;
+    } else if (c == 0x7b /* { */ ) {
+      // `{2,3}` is read as `+`, and `{0,3}` as `*`. That permits more.
+      final parsed = parser._braces();
+      if (parsed == null) return atom;
+      min = parsed;
+    } else {
+      return atom;
+    }
+    if (parser.i < _src.length && _src.codeUnitAt(parser.i) == 0x3f) {
+      parser.i++;
+    }
+    if (repeats) _link(atom.last, atom.first);
+    return _Part(atom.first, atom.last, atom.canBeEmpty || min == 0);
+  }
+
+  _Part _atom() {
+    final start = parser.i;
+    if (_src.codeUnitAt(start) == 0x28 /* ( */ ) {
+      final next = start + 1 < _src.length ? _src.codeUnitAt(start + 1) : 0;
+      final third = start + 2 < _src.length ? _src.codeUnitAt(start + 2) : 0;
+      final fourth = start + 3 < _src.length ? _src.codeUnitAt(start + 3) : 0;
+      var skip = 1;
+      if (next == 0x3f /* ? */ ) {
+        if (third == 0x3a /* : */ ) {
+          skip = 3;
+        } else if (third == 0x3c /* < */ && fourth != 0x3d && fourth != 0x21) {
+          final close = _src.indexOf('>', start);
+          if (close < 0) throw const FormatException();
+          skip = close + 1 - start;
+        } else {
+          // An assertion. The parser reads it and checks its syntax.
+          parser._atom(false);
+          final end = parser.i;
+          if (third != 0x3d /* = */ || !_atEndOfAlternative) return _empty;
+          // A lookahead at the end of an alternative: the regex continues
+          // with the text of the lookahead, and then with any text.
+          parser.i = start + 3;
+          final inner = disjunction();
+          parser.i = end;
+          return sequence(inner, any());
+        }
+      }
+      parser.i = start + skip;
+      final inner = disjunction();
+      if (parser.i >= _src.length || _src.codeUnitAt(parser.i) != 0x29) {
+        throw const FormatException();
+      }
+      parser.i++;
+      return inner;
+    }
+    parser._loose = false;
+    parser._unit = null;
+    final node = parser._atom(false);
+    if (node.zeroWidth) return _empty;
+    final unit = parser._loose ? null : parser._unit;
+    if (unit != null) return _state(unit);
+    // An unknown part. It can start, or be empty, only before these units.
+    final set = Uint8List(FirstSet.bucketCount);
+    for (var b = 0; b < FirstSet.bucketCount; b++) {
+      set[b] = node.nonEmpty[b] | node.empty[b];
+    }
+    return _state(set, ends: true);
   }
 }
 

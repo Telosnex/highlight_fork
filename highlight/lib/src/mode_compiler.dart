@@ -193,6 +193,7 @@ class MultiRegex {
   List<Uint8List> _seconds = const [];
   List<Uint8List?> _runStarts = const [];
   List<Uint8List?> _runs = const [];
+  List<Prefix?> _prefixes = const [];
 
   // Rules whose match needs no regex call.
   static const _always = 1;
@@ -208,6 +209,7 @@ class MultiRegex {
     _seconds = [for (final set in sets) set.second];
     _runStarts = [for (final set in sets) set.runStart];
     _runs = [for (final set in sets) set.run];
+    _prefixes = [for (final set in sets) set.prefix];
     _literals = [for (final set in sets) set.literal];
     _kinds = [
       for (var r = 0; r < sets.length; r++)
@@ -249,6 +251,7 @@ class MultiRegex {
     final runStarts = _runStarts;
     final runs = _runs;
     final kinds = _kinds;
+    final prefixes = _prefixes;
     final dispatch = _dispatch!;
     final requires = _requires;
     final seconds = _seconds;
@@ -326,7 +329,10 @@ class MultiRegex {
           final id = ids[rule];
           if (pos < failUntil[id] && pos >= failFrom![id]) continue;
         }
-        final match = regexes[rule].matchAsPrefix(s, pos) as RegExpMatch?;
+        final prefix = prefixes[rule];
+        final match = prefix != null && prefix.rejects(s, pos)
+            ? null
+            : regexes[rule].matchAsPrefix(s, pos) as RegExpMatch?;
         if (match != null) {
           return RuleMatch._(
             _rules[rule],

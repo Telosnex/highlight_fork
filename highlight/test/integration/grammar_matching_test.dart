@@ -23,6 +23,7 @@ String? refusal(FirstSet set, String text, int pos, {bool unicode = false}) {
       : unit < 128
       ? unit
       : FirstSet.nonAscii;
+  if (set.prefix?.rejects(text, pos) ?? false) return 'prefix';
   if (set.buckets[bucket] == 0) return 'bucket $bucket';
   final next = pos + 1 < text.length ? text.codeUnitAt(pos + 1) : -1;
   final nextBucket = next < 0
