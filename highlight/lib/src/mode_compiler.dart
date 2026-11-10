@@ -191,6 +191,52 @@ class MultiRegex {
   List<List<int>?>? _dispatch;
   List<int> _requires = const [];
   List<Uint8List> _seconds = const [];
+
+  // The rules for a first bucket are fewer when the unit before and the
+  // unit after are known. [_rows] has a row for each first bucket, which is
+  // built on first use. Its index is `context * (_classCount + 1) + class`.
+  // The context is one of the three below. The class is [_nextClass] of the
+  // bucket of the next unit: two buckets are in one class when the second
+  // sets of all rules agree on them. The class [_classCount] is for a next
+  // unit that is not known.
+  static const _afterWord = 0;
+  static const _atLineStart = 1;
+  static const _afterOther = 2;
+  final List<List<List<int>?>?> _rows = List.filled(FirstSet.bucketCount, null);
+  Uint8List _nextClass = Uint8List(0);
+  final List<int> _classBuckets = [];
+  int _classCount = 0;
+  final _sharedLists = <String, List<int>>{};
+
+  List<List<int>?> _buildRow(int bucket) {
+    final rules = _dispatch![bucket]!;
+    final unitIsWord = bucket < 128 && isWordUnit(bucket);
+    final classes = _classCount + 1;
+    final row = List<List<int>?>.filled(3 * classes, null);
+    for (var context = 0; context < 3; context++) {
+      for (var c = 0; c < classes; c++) {
+        final list = <int>[];
+        for (final rule in rules) {
+          if (c < _classCount && _seconds[rule][_classBuckets[c]] == 0) {
+            continue;
+          }
+          final needs = _requires[rule];
+          if (needs & FirstSet.wordBoundary != 0 &&
+              (context == _afterWord) == unitIsWord) {
+            continue;
+          }
+          if (needs & FirstSet.lineStart != 0 && context != _atLineStart) {
+            continue;
+          }
+          list.add(rule);
+        }
+        if (list.isEmpty) continue;
+        row[context * classes + c] = _sharedLists[list.join(',')] ??= list;
+      }
+    }
+    return _rows[bucket] = row;
+  }
+
   List<Uint8List?> _runStarts = const [];
   List<Uint8List?> _runs = const [];
   List<Prefix?> _prefixes = const [];
@@ -224,7 +270,7 @@ class MultiRegex {
           0,
     ];
     _unicode = _regexes.any((re) => re.isUnicode);
-    final shared = <String, List<int>>{};
+    final shared = _sharedLists;
     _dispatch = List<List<int>?>.generate(FirstSet.bucketCount, (bucket) {
       final rules = [
         for (var r = 0; r < sets.length; r++)
@@ -233,6 +279,18 @@ class MultiRegex {
       if (rules.isEmpty) return null;
       return shared[rules.join(',')] ??= rules;
     });
+    // Each distinct second set is one bit of the signature of a bucket.
+    final distinct = Set<Uint8List>.identity()..addAll(_seconds);
+    final classOf = <String, int>{};
+    _nextClass = Uint8List(FirstSet.bucketCount);
+    for (var bucket = 0; bucket < FirstSet.bucketCount; bucket++) {
+      final signature = [for (final set in distinct) set[bucket]].join();
+      _nextClass[bucket] = classOf[signature] ??= () {
+        _classBuckets.add(bucket);
+        return _classBuckets.length - 1;
+      }();
+    }
+    _classCount = _classBuckets.length;
   }
 
   RuleMatch? _execDispatch(
@@ -253,55 +311,56 @@ class MultiRegex {
     final kinds = _kinds;
     final prefixes = _prefixes;
     final dispatch = _dispatch!;
-    final requires = _requires;
-    final seconds = _seconds;
+    final allRows = _rows;
+    final nextClass = _nextClass;
+    final classes = _classCount + 1;
     final regexes = _regexes;
     final length = s.length;
+    var unit = from > 0 ? s.codeUnitAt(from - 1) : -1;
     for (var pos = from; pos <= length; pos++) {
-      var unit = -1;
-      List<int>? rules;
+      final before = unit;
+      int bucket;
       if (pos < length) {
         unit = s.codeUnitAt(pos);
-        rules = dispatch[unit < 128 ? unit : FirstSet.nonAscii];
+        bucket = unit < 128 ? unit : FirstSet.nonAscii;
       } else {
-        rules = dispatch[FirstSet.end];
+        unit = -1;
+        bucket = FirstSet.end;
       }
+      if (dispatch[bucket] == null) continue;
+      var known = true;
+      if (unit >= 128 && _unicode) {
+        // A Unicode regex does not start a match inside a surrogate pair.
+        if (pos > from &&
+            unit & 0xfc00 == 0xdc00 &&
+            before & 0xfc00 == 0xd800) {
+          continue;
+        }
+        // See [FirstSet.second].
+        if (unit & 0xf800 == 0xd800) known = false;
+      }
+      var column = classes - 1;
+      if (known) {
+        final next = pos + 1 < length ? s.codeUnitAt(pos + 1) : -1;
+        column =
+            nextClass[next < 0
+                ? FirstSet.end
+                : next < 128
+                ? next
+                : FirstSet.nonAscii];
+      }
+      final context = before < 0
+          ? _atLineStart
+          : before < 128
+          ? _contexts[before]
+          : before == 0x2028 || before == 0x2029
+          ? _atLineStart
+          : _afterOther;
+      final rules =
+          (allRows[bucket] ?? _buildRow(bucket))[context * classes + column];
       if (rules == null) continue;
-      // A Unicode regex does not start a match inside a surrogate pair.
-      if (_unicode &&
-          pos > from &&
-          unit & 0xfc00 == 0xdc00 &&
-          s.codeUnitAt(pos - 1) & 0xfc00 == 0xd800) {
-        continue;
-      }
-      // See [FirstSet.second].
-      final surrogate = _unicode && unit & 0xf800 == 0xd800;
-      final next = pos + 1 < length ? s.codeUnitAt(pos + 1) : -1;
-      final nextBucket = next < 0
-          ? FirstSet.end
-          : next < 128
-          ? next
-          : FirstSet.nonAscii;
       for (var i = 0; i < rules.length; i++) {
         final rule = rules[i];
-        if (seconds[rule][nextBucket] == 0 && !surrogate) continue;
-        final needs = requires[rule];
-        if (needs != 0) {
-          final before = pos > 0 ? s.codeUnitAt(pos - 1) : -1;
-          if (needs & FirstSet.wordBoundary != 0 &&
-              (before >= 0 && before < 128 && isWordUnit(before)) ==
-                  (unit >= 0 && unit < 128 && isWordUnit(unit))) {
-            continue;
-          }
-          if (needs & FirstSet.lineStart != 0 &&
-              !(before < 0 ||
-                  before == 0x0a ||
-                  before == 0x0d ||
-                  before == 0x2028 ||
-                  before == 0x2029)) {
-            continue;
-          }
-        }
         final kind = kinds[rule];
         if (kind != 0) {
           String? lexeme;
@@ -422,6 +481,16 @@ class MultiRegex {
     );
   }
 }
+
+/// For each ASCII unit, the context of the position after it.
+final Uint8List _contexts = () {
+  final contexts = Uint8List(128)..fillRange(0, 128, MultiRegex._afterOther);
+  for (var unit = 0; unit < 128; unit++) {
+    if (isWordUnit(unit)) contexts[unit] = MultiRegex._afterWord;
+  }
+  contexts[0x0a] = contexts[0x0d] = MultiRegex._atLineStart;
+  return contexts;
+}();
 
 // Above every string index, and exact as a JavaScript number.
 const _noMatch = 0x1fffffffffffff;
