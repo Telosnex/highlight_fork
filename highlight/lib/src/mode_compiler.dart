@@ -131,7 +131,7 @@ class MultiRegex {
     final table = this.table;
     final strategy = debugStrategy;
     if (table != null &&
-        (strategy == null ? !_isWeb : strategy == MatchStrategy.dispatch)) {
+        (strategy == null || strategy == MatchStrategy.dispatch)) {
       return _execDispatch(s, from, table, cache);
     }
     if (_calls == 64) {
@@ -419,10 +419,6 @@ class MultiRegex {
 
 // Above every string index, and exact as a JavaScript number.
 const _noMatch = 0x1fffffffffffff;
-
-/// On the web, [RegExp] is the regex of the browser, which compiles the
-/// joined regex to machine code. There the joined regex is the fast way.
-const _isWeb = bool.fromEnvironment('dart.library.js_interop');
 
 /// How a [MultiRegex] finds the next match. All ways give the same match.
 enum MatchStrategy { joined, ruleAtATime, dispatch }
