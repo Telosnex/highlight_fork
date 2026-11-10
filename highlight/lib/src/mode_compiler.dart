@@ -193,8 +193,8 @@ class MultiRegex {
   List<Uint8List> _seconds = const [];
 
   // The rules for a first bucket are fewer when the unit before and the
-  // unit after are known. [_rows] has a row for each first bucket, which is
-  // built on first use. Its index is `context * (_classCount + 1) + class`.
+  // unit after are known. [_rows] has a row for each first bucket. Its
+  // index is `context * (_classCount + 1) + class`.
   // The context is one of the three below. The class is [_nextClass] of the
   // bucket of the next unit: two buckets are in one class when the second
   // sets of all rules agree on them. The class [_classCount] is for a next
@@ -206,35 +206,32 @@ class MultiRegex {
   Uint8List _nextClass = Uint8List(0);
   final List<int> _classBuckets = [];
   int _classCount = 0;
-  final _sharedLists = <String, List<int>>{};
 
-  List<List<int>?> _buildRow(int bucket) {
-    final rules = _dispatch![bucket]!;
-    final unitIsWord = bucket < 128 && isWordUnit(bucket);
+  static const List<int> _noRules = [];
+
+  /// The rules for one entry of the row of [bucket]. An entry is built on
+  /// first use: a parse uses few of them.
+  List<int> _buildEntry(int bucket, int context, int column) {
     final classes = _classCount + 1;
-    final row = List<List<int>?>.filled(3 * classes, null);
-    for (var context = 0; context < 3; context++) {
-      for (var c = 0; c < classes; c++) {
-        final list = <int>[];
-        for (final rule in rules) {
-          if (c < _classCount && _seconds[rule][_classBuckets[c]] == 0) {
-            continue;
-          }
-          final needs = _requires[rule];
-          if (needs & FirstSet.wordBoundary != 0 &&
-              (context == _afterWord) == unitIsWord) {
-            continue;
-          }
-          if (needs & FirstSet.lineStart != 0 && context != _atLineStart) {
-            continue;
-          }
-          list.add(rule);
-        }
-        if (list.isEmpty) continue;
-        row[context * classes + c] = _sharedLists[list.join(',')] ??= list;
+    final row = _rows[bucket] ??= List<List<int>?>.filled(3 * classes, null);
+    final unitIsWord = bucket < 128 && isWordUnit(bucket);
+    var list = _noRules;
+    for (final rule in _dispatch![bucket]!) {
+      if (column < _classCount && _seconds[rule][_classBuckets[column]] == 0) {
+        continue;
       }
+      final needs = _requires[rule];
+      if (needs & FirstSet.wordBoundary != 0 &&
+          (context == _afterWord) == unitIsWord) {
+        continue;
+      }
+      if (needs & FirstSet.lineStart != 0 && context != _atLineStart) {
+        continue;
+      }
+      if (list.isEmpty) list = [];
+      list.add(rule);
     }
-    return _rows[bucket] = row;
+    return row[context * classes + column] = list;
   }
 
   List<Uint8List?> _runStarts = const [];
@@ -270,7 +267,7 @@ class MultiRegex {
           0,
     ];
     _unicode = _regexes.any((re) => re.isUnicode);
-    final shared = _sharedLists;
+    final shared = <String, List<int>>{};
     _dispatch = List<List<int>?>.generate(FirstSet.bucketCount, (bucket) {
       final rules = [
         for (var r = 0; r < sets.length; r++)
@@ -358,8 +355,8 @@ class MultiRegex {
           ? _atLineStart
           : _afterOther;
       final rules =
-          (allRows[bucket] ?? _buildRow(bucket))[context * classes + column];
-      if (rules == null) continue;
+          allRows[bucket]?[context * classes + column] ??
+          _buildEntry(bucket, context, column);
       for (var i = 0; i < rules.length; i++) {
         final rule = rules[i];
         final kind = kinds[rule];
