@@ -292,8 +292,7 @@ class Highlight {
       var i = 1;
       final groups = match['_groups'] as List<String?>? ?? [];
       final emit = scope['_emit'] as Map<int, bool>? ?? {};
-      final origMatch = match['_match'] as RegExpMatch?;
-      final max = origMatch?.groupCount ?? groups.length;
+      final max = groups.length - 1;
 
       while (i <= max) {
         if (emit[i] != true) {

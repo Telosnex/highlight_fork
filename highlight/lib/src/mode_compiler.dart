@@ -14,6 +14,11 @@ class MultiRegex {
   int lastIndex = 0;
   final RegExp Function(String, bool) langRe;
 
+  /// The capture group that wraps each rule, in rule order, then the group
+  /// count plus one. Rule `n` owns the groups from `_ruleStarts[n]` up to,
+  /// but not including, `_ruleStarts[n + 1]`.
+  List<int> _ruleStarts = const [];
+
   MultiRegex(this.langRe);
 
   void addRule(RegExp re, Map<String, dynamic> opts) {
@@ -36,56 +41,45 @@ class MultiRegex {
       ),
       true,
     );
+    _ruleStarts = [...matchIndexes.keys, matchAt];
     lastIndex = 0;
   }
 
   Map<String, dynamic>? exec(String s) {
-    if (matcherRe == null) return null;
-    if (lastIndex >= s.length) {
-      if (lastIndex > s.length) return null;
-    }
+    final re = matcherRe;
+    if (re == null || lastIndex > s.length) return null;
 
-    final startIdx = lastIndex < 0
-        ? 0
-        : (lastIndex > s.length ? s.length : lastIndex);
-    Iterable<RegExpMatch> allMatches;
-    try {
-      allMatches = matcherRe!.allMatches(s, startIdx);
-    } catch (_) {
-      return null;
-    }
-    RegExpMatch? match;
-    for (final m in allMatches) {
-      match = m;
-      break;
-    }
+    final match = re.allMatches(s, lastIndex < 0 ? 0 : lastIndex).firstOrNull;
     if (match == null) return null;
 
-    int? i;
-    for (var idx = 1; idx <= match.groupCount; idx++) {
-      if (match.group(idx) != null) {
-        i = idx;
-        break;
-      }
+    // Exactly one rule matched: the one whose wrapping group took part. That
+    // group is the whole match. Test only the wrapping groups, not the groups
+    // inside each rule.
+    final starts = _ruleStarts;
+    final last = starts.length - 1;
+    String? lexeme;
+    var rule = 0;
+    for (; rule < last; rule++) {
+      lexeme = match.group(starts[rule]);
+      if (lexeme != null) break;
     }
-    if (i == null) return null;
+    if (lexeme == null) return null;
 
-    final matchData = matchIndexes[i]!;
+    final first = starts[rule];
+    final end = starts[rule + 1];
+    final groups = List<String?>.filled(end - first, null);
+    groups[0] = lexeme;
+    for (var g = first + 1; g < end; g++) {
+      groups[g - first] = match.group(g);
+    }
 
-    final result = <String, dynamic>{
-      ...matchData,
+    return <String, dynamic>{
+      ...matchIndexes[first]!,
       'index': match.start,
       '_match': match,
+      '_groups': groups,
+      '0': lexeme,
     };
-
-    final groups = <String?>[];
-    for (var g = i; g <= match.groupCount; g++) {
-      groups.add(match.group(g));
-    }
-    result['_groups'] = groups;
-    result['0'] = match.group(0);
-
-    return result;
   }
 }
 
