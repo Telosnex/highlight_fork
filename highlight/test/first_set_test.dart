@@ -249,6 +249,28 @@ void main() {
     });
   });
 
+  test('the ASCII units of a Unicode property', () {
+    asciiOfProperty.forEach((name, ascii) {
+      final re = RegExp('\\p{$name}', unicode: true);
+      final not = RegExp('\\P{$name}', unicode: true);
+      for (var unit = 0; unit < 128; unit++) {
+        final text = String.fromCharCode(unit);
+        expect(re.hasMatch(text), ascii.contains(text), reason: '$name $unit');
+        expect(not.hasMatch(text), !ascii.contains(text));
+      }
+      expect(
+        buckets('\\p{$name}', unicode: true),
+        [...ascii.codeUnits, FirstSet.nonAscii]..sort(),
+      );
+    });
+    // With `iu`, a property also matches the other case.
+    expect(
+      buckets(r'\p{Lu}', unicode: true, caseSensitive: false),
+      hasLength(129),
+    );
+    expect(buckets(r'\P{Lu}', unicode: true), hasLength(129 - 26));
+  });
+
   test('case', () {
     expect(buckets('a', caseSensitive: false), units('Aa'));
     // With `iu`, `k` also matches the Kelvin sign.

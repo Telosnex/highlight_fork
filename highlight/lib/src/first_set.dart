@@ -805,15 +805,29 @@ class _Parser {
         }
       case 0x70: // p
       case 0x50: // P
+        String? ascii;
         if (unicode) {
           final close = src.indexOf('}', i);
           if (close < 0) _fail();
+          // With `iu`, a property also matches the other case.
+          if (!ignoreCase) {
+            ascii = asciiOfProperty[src.substring(i + 1, close)];
+          }
           i = close + 1;
         }
-        _loose = true;
-        for (var u = 0; u <= FirstSet.nonAscii; u++) {
-          set[u] = 1;
+        if (ascii == null) {
+          _loose = true;
+          for (var u = 0; u <= FirstSet.nonAscii; u++) {
+            set[u] = 1;
+          }
+          return;
         }
+        for (var u = 0; u < 128; u++) {
+          if (ascii.contains(String.fromCharCode(u)) == (c == 0x70)) {
+            set[u] = 1;
+          }
+        }
+        set[FirstSet.nonAscii] = 1;
       default:
         _addUnit(set, _escapeValue(c, inClass: inClass));
     }
@@ -960,6 +974,23 @@ class _Parser {
     return value;
   }
 }
+
+const _upper = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+const _lower = 'abcdefghijklmnopqrstuvwxyz';
+const _digits = '0123456789';
+
+/// The ASCII units of the Unicode properties that the grammars use.
+const asciiOfProperty = {
+  'L': '$_upper$_lower',
+  'Letter': '$_upper$_lower',
+  'Lu': _upper,
+  'Ll': _lower,
+  'Nd': _digits,
+  'ID_Start': '$_upper$_lower',
+  'XID_Start': '$_upper$_lower',
+  'ID_Continue': '$_upper$_lower${_digits}_',
+  'XID_Continue': '$_upper$_lower${_digits}_',
+};
 
 bool _isDigit(int u) => u >= 0x30 && u <= 0x39;
 bool _isLetter(int u) => (u | 0x20) >= 0x61 && (u | 0x20) <= 0x7a;
