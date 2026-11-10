@@ -8,7 +8,8 @@
 //   dart run --enable-vm-service test/perf/full_parse_perf.dart --profile json
 //
 // Arguments:
-//   <name>...        Run only the rows with these names (`typescript json`).
+//   <name>...        Run only these rows: a row (`typescript`), a workload
+//                    (`large`), or both (`stream/json`).
 //   --stream         Add the line-by-line continuation workload.
 //   --runs=N         Number of samples (default 40).
 //   --file=PATH:LANG Add a local file as a row. Use `auto` for detection.
@@ -274,7 +275,13 @@ Future<void> main(List<String> args) async {
         ),
     ...files,
   ];
-  final unknown = only.difference({for (final s in scenarios) s.name});
+  final unknown = only.difference({
+    for (final s in scenarios) ...[
+      s.name,
+      s.workload,
+      '${s.workload}/${s.name}',
+    ],
+  });
   if (unknown.isNotEmpty) {
     stderr.writeln('Unknown rows: $unknown');
     exit(64);
@@ -286,7 +293,12 @@ Future<void> main(List<String> args) async {
   var failed = false;
   String? mode;
   for (final scenario in scenarios) {
-    if (only.isNotEmpty && !only.contains(scenario.name)) continue;
+    if (only.isNotEmpty &&
+        !only.contains(scenario.name) &&
+        !only.contains(scenario.workload) &&
+        !only.contains('${scenario.workload}/${scenario.name}')) {
+      continue;
+    }
     final result =
         await PerfTester<Case, List<Object>>.multi(
           testName: '${scenario.workload} ${scenario.name}',
