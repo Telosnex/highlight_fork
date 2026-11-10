@@ -6,10 +6,19 @@ import 'first_set.dart';
 ///
 /// The keyword pattern of most modes is a run of units from one set, such as
 /// `\w+`. A loop over the code units finds the same matches as the regex.
+/// For most other patterns, such as `[a-z]\w+|__\w+__`, the automaton of
+/// the pattern finds them. See [Prefix.matchEnd].
 class KeywordScan {
   final RegExp _pattern;
+
+  /// The units that can start a match.
   final Uint8List _start;
-  final Uint8List _run;
+
+  /// For a pattern that is a run: the units of the run. Else null.
+  final Uint8List? _run;
+
+  /// For a pattern that is not a run.
+  final Prefix? _automaton;
 
   /// The sets can match a unit outside ASCII. The loop does not know which,
   /// so the regex takes over at the first such unit.
@@ -24,13 +33,14 @@ class KeywordScan {
     this._pattern,
     this._start,
     this._run,
+    this._automaton,
     this._outsideAscii,
     this._minLength,
     this._maxLength,
     this._first,
   );
 
-  /// Null when [pattern] is not a run.
+  /// Null when the loop cannot find the matches of [pattern].
   static KeywordScan? of(
     RegExp pattern,
     Iterable<String> keywords,
@@ -41,9 +51,16 @@ class KeywordScan {
       caseSensitive: pattern.isCaseSensitive,
       unicode: pattern.isUnicode,
     );
-    final start = set.runStart;
-    final run = set.run;
-    if (!set.runOnly || start == null || run == null) return null;
+    var start = set.runStart;
+    var run = set.run;
+    Prefix? automaton;
+    if (!set.runOnly || start == null || run == null) {
+      final prefix = set.prefix;
+      if (prefix == null || !prefix.findsMatch) return null;
+      automaton = prefix;
+      start = set.buckets;
+      run = null;
+    }
     var minLength = 0x3fffffff;
     var maxLength = 0;
     final first = Uint8List(128);
@@ -63,7 +80,9 @@ class KeywordScan {
       pattern,
       start,
       run,
-      start[FirstSet.nonAscii] != 0 || run[FirstSet.nonAscii] != 0,
+      automaton,
+      start[FirstSet.nonAscii] != 0 ||
+          run != null && run[FirstSet.nonAscii] != 0,
       minLength,
       maxLength,
       first,
@@ -80,6 +99,7 @@ class KeywordScan {
   }) {
     final start = _start;
     final run = _run;
+    final automaton = _automaton;
     final length = text.length;
     var regexFrom = -1;
     var i = 0;
@@ -99,17 +119,30 @@ class KeywordScan {
         continue;
       }
       var end = i + 1;
-      while (end < length) {
-        final next = text.codeUnitAt(end);
-        if (next >= 128) {
-          if (_outsideAscii) {
-            regexFrom = i;
-            break scan;
+      if (run != null) {
+        while (end < length) {
+          final next = text.codeUnitAt(end);
+          if (next >= 128) {
+            if (_outsideAscii) {
+              regexFrom = i;
+              break scan;
+            }
+            break;
           }
-          break;
+          if (run[next] == 0) break;
+          end++;
         }
-        if (run[next] == 0) break;
-        end++;
+      } else {
+        end = automaton!.matchEnd(text, i);
+        if (end == Prefix.unknown) {
+          // The position is at an ASCII unit, so it is not in the middle
+          // of a code point of a Unicode regex.
+          end = _pattern.matchAsPrefix(text, i)?.end ?? -1;
+        }
+        if (end <= i) {
+          i++;
+          continue;
+        }
       }
       final size = end - i;
       if (!onlyCandidates ||

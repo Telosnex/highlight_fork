@@ -132,7 +132,42 @@ class Prefix {
   /// can match. One of them is the end of the regex.
   final int _open;
 
-  Prefix._(this._reads, this._after, this._first, this._open);
+  /// The automaton knows each part of the regex, and the regex takes the
+  /// longest match where the automaton has one path. See [matchEnd].
+  final bool findsMatch;
+
+  Prefix._(this._reads, this._after, this._first, this._open, this.findsMatch);
+
+  /// [matchEnd] cannot give the answer: the regex must.
+  static const unknown = -2;
+
+  /// The end of the match of the regex at [pos] of [s], -1 when there is no
+  /// match, or [unknown]. Only with [findsMatch].
+  ///
+  /// The regex tries its alternatives in order and does not always take the
+  /// longest match: `(a|ab)c?` matches only `a` of `abc`. But it does where
+  /// the automaton has one path for the text, each repeat takes all that it
+  /// can, and only the last of a list of alternatives can be empty. Then
+  /// each choice of the regex is between one path that reads a unit, which
+  /// it tries first, and the end.
+  int matchEnd(String s, int pos) {
+    final reads = _reads;
+    final after = _after;
+    final length = s.length;
+    var active = _first;
+    var end = -1;
+    for (var p = pos; p < length; p++) {
+      final unit = s.codeUnitAt(p);
+      if (unit >= 128) return unknown;
+      // State 0 is the end of the regex.
+      final hit = active & reads[unit] & ~1;
+      if (hit == 0) break;
+      if (hit & (hit - 1) != 0) return unknown;
+      active = after[hit.bitLength - 1];
+      if (active & 1 != 0) end = p + 1;
+    }
+    return end;
+  }
 
   static Prefix? _of(String source, bool ignoreCase, bool unicode) {
     final builder = _PrefixBuilder(_Parser(source, ignoreCase, unicode));
@@ -141,6 +176,7 @@ class Prefix {
     final part = builder.sequence(all, builder.any());
     // No test when the first unit decides nothing.
     if (part.first & 1 != 0) return null;
+    final findsMatch = builder.exact && builder.open == 1;
     final reads = List<int>.filled(FirstSet.bucketCount, 0);
     for (var state = 0; state < builder.sets.length; state++) {
       final set = builder.sets[state];
@@ -152,7 +188,7 @@ class Prefix {
         if (set[bucket] != 0) reads[bucket] |= 1 << state;
       }
     }
-    return Prefix._(reads, builder.after, part.first, builder.open);
+    return Prefix._(reads, builder.after, part.first, builder.open, findsMatch);
   }
 
   /// True when the regex cannot match at [pos] of [s].
@@ -198,6 +234,10 @@ class _PrefixBuilder {
   final after = <int>[0];
   int open = 1;
 
+  /// False when the automaton permits more than the regex, or when the
+  /// regex can prefer a shorter match. See [Prefix.matchEnd].
+  bool exact = true;
+
   _PrefixBuilder(this.parser);
 
   // A bit operation in JavaScript has 32 bits.
@@ -211,7 +251,10 @@ class _PrefixBuilder {
 
   /// A state that reads one unit of [set]. With [ends], it ends the test.
   _Part _state(Uint8List set, {bool ends = false}) {
-    if (sets.length == _maxStates) return any();
+    if (sets.length == _maxStates) {
+      exact = false;
+      return any();
+    }
     final bit = 1 << sets.length;
     sets.add(set);
     after.add(0);
@@ -241,6 +284,8 @@ class _PrefixBuilder {
     var part = _alternative();
     while (parser.i < _src.length && _src.codeUnitAt(parser.i) == 0x7c) {
       parser.i++;
+      // The regex prefers an empty alternative to a later one.
+      if (part.canBeEmpty) exact = false;
       final other = _alternative();
       part = _Part(
         part.first | other.first,
@@ -286,11 +331,13 @@ class _PrefixBuilder {
       final parsed = parser._braces();
       if (parsed == null) return atom;
       min = parsed;
+      exact = false;
     } else {
       return atom;
     }
     if (parser.i < _src.length && _src.codeUnitAt(parser.i) == 0x3f) {
       parser.i++;
+      exact = false;
     }
     if (repeats) _link(atom.last, atom.first);
     return _Part(atom.first, atom.last, atom.canBeEmpty || min == 0);
@@ -312,6 +359,7 @@ class _PrefixBuilder {
           skip = close + 1 - start;
         } else {
           // An assertion. The parser reads it and checks its syntax.
+          exact = false;
           parser._atom(false);
           final end = parser.i;
           if (third != 0x3d /* = */ || !_atEndOfAlternative) return _empty;
@@ -334,7 +382,10 @@ class _PrefixBuilder {
     parser._loose = false;
     parser._unit = null;
     final node = parser._atom(false);
-    if (node.zeroWidth) return _empty;
+    if (node.zeroWidth) {
+      exact = false;
+      return _empty;
+    }
     final unit = parser._loose ? null : parser._unit;
     if (unit != null) return _state(unit);
     // An unknown part. It can start, or be empty, only before these units.
