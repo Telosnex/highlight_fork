@@ -228,20 +228,12 @@ class Highlight {
   ]) {
     final keywordHits = <String, int>{...?continuation?._keywordHits};
 
-    RegExpMatch callbackMatch(Map<String, dynamic> match) {
-      final original = match['_match'] as RegExpMatch;
-      final groups = List<String?>.from(
-        match['_groups'] as List<String?>? ?? [],
-      );
-      return _CallbackRegExpMatch(original, groups);
-    }
-
-    RegExpMatch? directRuleMatch(RegExp? re, Map<String, dynamic> match) {
-      if (re == null) return null;
-      final start = match['index'] as int? ?? 0;
-      // Match in place. A substring of the remaining source here made every
-      // begin match copy the rest of the document.
-      return re.matchAsPrefix(codeToHighlight, start) as RegExpMatch?;
+    // The match that a callback gets: the rule's own regex, matched in place,
+    // so that input, start and end are those of the source.
+    RegExpMatch callbackMatch(RegExp? re, RuleMatch match) {
+      final direct = re?.matchAsPrefix(codeToHighlight, match.index);
+      if (direct != null) return direct as RegExpMatch;
+      return _CallbackRegExpMatch(match.match, match.groups);
     }
 
     final language = getLanguage(languageName);
@@ -258,7 +250,7 @@ class Highlight {
       ...?continuation?._sublanguages,
     };
     final emitter = TokenTreeEmitter(options);
-    var modeBuffer = '';
+    final modeBuffer = StringBuffer();
     num relevance = 0;
     var index = 0;
     var iterations = 0;
@@ -272,12 +264,6 @@ class Highlight {
     late void Function() processBuffer;
     late void Function() processKeywords;
 
-    List<dynamic>? keywordData(Mode mode, String matchText) {
-      final keywords = mode.compiledKeywords;
-      if (keywords == null) return null;
-      return keywords[matchText];
-    }
-
     void emitKeyword(String keyword, String scope) {
       if (keyword.isEmpty) return;
       emitter.startScope(scope);
@@ -285,12 +271,9 @@ class Highlight {
       emitter.endScope();
     }
 
-    void emitMultiClass(
-      Map<dynamic, dynamic> scope,
-      Map<String, dynamic> match,
-    ) {
+    void emitMultiClass(Map<dynamic, dynamic> scope, RuleMatch match) {
       var i = 1;
-      final groups = match['_groups'] as List<String?>? ?? [];
+      final groups = match.groups;
       final emit = scope['_emit'] as Map<int, bool>? ?? {};
       final max = groups.length - 1;
 
@@ -311,80 +294,74 @@ class Highlight {
         if (klass != null && klass.isNotEmpty) {
           emitKeyword(text, klass);
         } else {
-          modeBuffer = text;
+          modeBuffer
+            ..clear()
+            ..write(text);
           processKeywords();
-          modeBuffer = '';
+          modeBuffer.clear();
         }
         i++;
       }
     }
 
     processKeywords = () {
+      if (modeBuffer.isEmpty) return;
+      final text = modeBuffer.toString();
       final keywords = top.compiledKeywords;
-      if (keywords == null) {
-        emitter.addText(modeBuffer);
-        return;
-      }
-
       final keywordPatternRe = top.keywordPatternRe;
-      if (keywordPatternRe == null) {
-        emitter.addText(modeBuffer);
+      if (keywords == null || keywordPatternRe == null) {
+        emitter.addText(text);
         return;
       }
 
-      var lastIndex = 0;
-      var buf = '';
+      // Text from [plainStart] up to the current word has no scope.
+      var plainStart = 0;
+      final caseInsensitive = language.caseInsensitive == true;
 
-      for (final match in keywordPatternRe.allMatches(modeBuffer)) {
-        buf += modeBuffer.substring(lastIndex, match.start);
-        final word = (language.caseInsensitive == true)
-            ? match.group(0)!.toLowerCase()
-            : match.group(0)!;
-        final data = keywordData(top, word);
-        if (data != null) {
-          final kind = data[0] as String;
-          final keywordRelevance = data[1] as num;
-          emitter.addText(buf);
-          buf = '';
+      for (final match in keywordPatternRe.allMatches(text)) {
+        final matched = match.group(0)!;
+        final word = caseInsensitive ? matched.toLowerCase() : matched;
+        final data = keywords[word];
+        if (data == null) continue;
+        final kind = data[0] as String;
+        final keywordRelevance = data[1] as num;
+        emitter.addText(text.substring(plainStart, match.start));
+        plainStart = match.start;
 
-          keywordHits[word] = (keywordHits[word] ?? 0) + 1;
-          if (keywordHits[word]! <= _maxKeywordHits) {
-            relevance += keywordRelevance;
-          }
-          if (kind.startsWith('_')) {
-            buf += match.group(0)!;
-          } else {
-            final cssClass = _classNameAlias(language, kind) ?? kind;
-            emitKeyword(match.group(0)!, cssClass);
-          }
-        } else {
-          buf += match.group(0)!;
+        final hits = (keywordHits[word] ?? 0) + 1;
+        keywordHits[word] = hits;
+        if (hits <= _maxKeywordHits) {
+          relevance += keywordRelevance;
         }
-        lastIndex = match.end;
+        if (!kind.startsWith('_')) {
+          final cssClass = _classNameAlias(language, kind) ?? kind;
+          emitKeyword(matched, cssClass);
+          plainStart = match.end;
+        }
       }
-      buf += modeBuffer.substring(lastIndex);
-      emitter.addText(buf);
+      emitter.addText(plainStart == 0 ? text : text.substring(plainStart));
     };
 
     void processSubLanguage() {
       if (modeBuffer.isEmpty) return;
+      final text = modeBuffer.toString();
 
       HighlightResult result;
 
       final subLang = top.subLanguage;
       if (subLang is String) {
         if (_languages[subLang] == null) {
-          emitter.addText(modeBuffer);
+          emitter.addText(text);
           return;
         }
-        result = _highlight(subLang, modeBuffer, true, continuations[subLang]);
+        result = _highlight(subLang, text, true, continuations[subLang]);
         final next = result.continuation;
         if (next != null) continuations[subLang] = next;
       } else {
         final subset = subLang is List && subLang.isNotEmpty
             ? subLang.cast<String>()
             : null;
-        result = highlightAuto(modeBuffer, languageSubset: subset);
+        result = highlightAuto(text, languageSubset: subset);
       }
 
       if ((top.relevance ?? 0) > 0) {
@@ -399,10 +376,10 @@ class Highlight {
       } else {
         processKeywords();
       }
-      modeBuffer = '';
+      modeBuffer.clear();
     };
 
-    Mode startNewMode(Mode mode, Map<String, dynamic> match) {
+    Mode startNewMode(Mode mode, RuleMatch match) {
       final scope = mode.scope;
       if (mode.skip != true && scope is String && scope.isNotEmpty) {
         emitter.openNode(_classNameAlias(language, scope) ?? scope);
@@ -413,11 +390,11 @@ class Highlight {
           final wrap =
               _classNameAlias(language, beginScope['_wrap'] as String?) ??
               beginScope['_wrap'] as String;
-          emitKeyword(modeBuffer, wrap);
-          modeBuffer = '';
+          emitKeyword(modeBuffer.toString(), wrap);
+          modeBuffer.clear();
         } else if (beginScope['_multi'] == true) {
           emitMultiClass(beginScope, match);
-          modeBuffer = '';
+          modeBuffer.clear();
         }
       }
 
@@ -457,7 +434,7 @@ class Highlight {
     int doIgnore(String lexeme) {
       final matcher = top.matcher;
       if (matcher != null && matcher.regexIndex == 0) {
-        modeBuffer += lexeme.isNotEmpty ? lexeme[0] : '';
+        if (lexeme.isNotEmpty) modeBuffer.write(lexeme[0]);
         return 1;
       } else {
         resumeScanAtSamePosition = true;
@@ -465,18 +442,17 @@ class Highlight {
       }
     }
 
-    int doBeginMatch(Map<String, dynamic> match) {
-      final lexeme = match['0'] as String? ?? '';
+    int doBeginMatch(RuleMatch match) {
+      final lexeme = match.lexeme;
       // Callback data is local to this mode invocation, never the shared rule.
-      final newMode = (match['rule'] as Mode).shallowCopy();
+      final newMode = match.rule.mode!.shallowCopy();
 
       // Most rules have no callback. Build the callback match, its response
       // and the data map only for the rules that have one.
       final beforeBegin = newMode.beforeBeginCallback;
       final onBegin = newMode.onBegin;
       if (beforeBegin != null || onBegin != null) {
-        final beginMatch =
-            directRuleMatch(newMode.beginRe, match) ?? callbackMatch(match);
+        final beginMatch = callbackMatch(newMode.beginRe, match);
         final resp = CallbackResponse(newMode.data ??= {});
         for (final cb in [beforeBegin, onBegin]) {
           if (cb == null) continue;
@@ -486,14 +462,14 @@ class Highlight {
       }
 
       if (newMode.skip == true) {
-        modeBuffer += lexeme;
+        modeBuffer.write(lexeme);
       } else {
         if (newMode.excludeBegin == true) {
-          modeBuffer += lexeme;
+          modeBuffer.write(lexeme);
         }
         processBuffer();
         if (newMode.returnBegin != true && newMode.excludeBegin != true) {
-          modeBuffer = lexeme;
+          modeBuffer.write(lexeme);
         }
       }
       startNewMode(newMode, match);
@@ -502,12 +478,9 @@ class Highlight {
 
     final noMatch = Object();
 
-    dynamic doEndMatch(Map<String, dynamic> match) {
-      final lexeme = match['0'] as String? ?? '';
-      final matchIndex = (match['index'] as int).clamp(
-        0,
-        codeToHighlight.length,
-      );
+    dynamic doEndMatch(RuleMatch match) {
+      final lexeme = match.lexeme;
+      final matchIndex = match.index;
       final endMode = endOfMode(top, matchIndex);
       if (endMode == null) return noMatch;
 
@@ -524,14 +497,14 @@ class Highlight {
         processBuffer();
         emitMultiClass(endScope, match);
       } else if (origin.skip == true) {
-        modeBuffer += lexeme;
+        modeBuffer.write(lexeme);
       } else {
         if (origin.returnEnd != true && origin.excludeEnd != true) {
-          modeBuffer += lexeme;
+          modeBuffer.write(lexeme);
         }
         processBuffer();
         if (origin.excludeEnd == true) {
-          modeBuffer = lexeme;
+          modeBuffer.write(lexeme);
         }
       }
 
@@ -576,49 +549,51 @@ class Highlight {
       }
     }
 
-    var lastMatch = <String, dynamic>{};
+    RuleMatch? lastMatch;
 
-    int processLexeme(String textBeforeMatch, Map<String, dynamic>? match) {
-      final lexeme = match != null ? (match['0'] as String? ?? '') : null;
+    // Adds the source from [start] to [end] to the buffer, then handles
+    // [match]. Returns the number of units of the lexeme that are consumed.
+    int processLexeme(int start, int end, RuleMatch? match) {
+      if (end > start) modeBuffer.write(codeToHighlight.substring(start, end));
 
-      modeBuffer += textBeforeMatch;
-
-      if (lexeme == null) {
+      if (match == null) {
         processBuffer();
         return 0;
       }
+      final lexeme = match.lexeme;
+      final type = match.rule.type;
+      final last = lastMatch;
 
-      if (lastMatch['type'] == 'begin' &&
-          match!['type'] == 'end' &&
-          lastMatch['index'] == match['index'] &&
+      if (last != null &&
+          last.rule.type == MatchType.begin &&
+          type == MatchType.end &&
+          last.index == match.index &&
           lexeme.isEmpty) {
-        final mi = (match['index'] as int).clamp(0, codeToHighlight.length);
-        final miEnd = (mi + 1).clamp(mi, codeToHighlight.length);
-        modeBuffer += codeToHighlight.substring(mi, miEnd);
+        final mi = match.index;
+        if (mi < codeToHighlight.length) modeBuffer.write(codeToHighlight[mi]);
         if (!_safeMode) {
           throw StateError('0 width match regex ($languageName)');
         }
         return 1;
       }
-      lastMatch = match!;
+      lastMatch = match;
 
-      if (match['type'] == 'begin') {
+      if (type == MatchType.begin) {
         return doBeginMatch(match);
-      } else if (match['type'] == 'illegal' && !ignoreIllegals) {
+      } else if (type == MatchType.illegal && !ignoreIllegals) {
         throw StateError(
           'Illegal lexeme "$lexeme" for mode "${top.scope ?? '<unnamed>'}"',
         );
-      } else if (match['type'] == 'end') {
+      } else if (type == MatchType.end) {
         final processed = doEndMatch(match);
         if (!identical(processed, noMatch)) {
           return processed as int;
         }
       }
 
-      if (match['type'] == 'illegal' && lexeme.isEmpty) {
-        final matchIndex = match['index'] as int;
-        if (matchIndex < codeToHighlight.length) {
-          modeBuffer += '\n';
+      if (type == MatchType.illegal && lexeme.isEmpty) {
+        if (match.index < codeToHighlight.length) {
+          modeBuffer.write('\n');
         }
         return 1;
       }
@@ -629,7 +604,7 @@ class Highlight {
         );
       }
 
-      modeBuffer += lexeme;
+      modeBuffer.write(lexeme);
       return lexeme.length;
     }
 
@@ -657,21 +632,20 @@ class Highlight {
           final match = matcher.exec(codeToHighlight, ruleMatches);
           if (match == null) break;
 
-          final matchIdx = match['index'] as int;
+          final matchIdx = match.index;
           final safeIndex = index.clamp(0, codeToHighlight.length);
-          final safeMatchIdx = matchIdx.clamp(
+          final processedCount = processLexeme(
             safeIndex,
-            codeToHighlight.length,
+            matchIdx < safeIndex ? safeIndex : matchIdx,
+            match,
           );
-          final beforeMatch = codeToHighlight.substring(
-            safeIndex,
-            safeMatchIdx,
-          );
-          final processedCount = processLexeme(beforeMatch, match);
           index = matchIdx + processedCount;
         }
-        final safeIndex = index.clamp(0, codeToHighlight.length);
-        processLexeme(codeToHighlight.substring(safeIndex), null);
+        processLexeme(
+          index.clamp(0, codeToHighlight.length),
+          codeToHighlight.length,
+          null,
+        );
       } else {
         emitTokens(codeToHighlight, emitter);
       }

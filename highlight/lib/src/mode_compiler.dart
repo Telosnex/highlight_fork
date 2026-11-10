@@ -5,11 +5,56 @@ import 'before_match.dart';
 import 'compile_keywords.dart';
 import 'multi_class.dart';
 
-class MultiRegex {
-  final Map<int, Map<String, dynamic>> matchIndexes = {};
-  final List<List<dynamic>> regexes = [];
-  int matchAt = 1;
+enum MatchType { begin, end, illegal }
+
+/// One rule of a mode: the start of a child mode, the end of the mode, or
+/// illegal text.
+class MatchRule {
+  final MatchType type;
+
+  /// The child mode, for [MatchType.begin].
+  final Mode? mode;
+
+  /// The index of the rule in the matcher that was built last. The matchers
+  /// of a [ResumableMultiRegex] share their rules, as in highlight.js.
   int position = 0;
+
+  MatchRule(this.type, [this.mode]);
+}
+
+/// A match of one rule in the source.
+class RuleMatch {
+  final MatchRule rule;
+
+  /// The regex match. It is a match of the joined regex or of the regex of
+  /// the rule; [groups] hides the difference.
+  final RegExpMatch match;
+  final String lexeme;
+  final int _firstGroup;
+  final int _groupCount;
+  List<String?>? _groups;
+
+  RuleMatch._(
+    this.rule,
+    this.match,
+    this.lexeme,
+    this._firstGroup,
+    this._groupCount,
+  );
+
+  int get index => match.start;
+
+  /// The lexeme, then the capture groups of the rule.
+  List<String?> get groups => _groups ??= [
+    lexeme,
+    for (var g = 1; g <= _groupCount; g++) match.group(_firstGroup + g),
+  ];
+}
+
+class MultiRegex {
+  final List<MatchRule> _rules = [];
+  final List<RegExp> _regexes = [];
+  int matchAt = 1;
   RegExp? matcherRe;
   int lastIndex = 0;
   final RegExp Function(String, bool) langRe;
@@ -17,8 +62,7 @@ class MultiRegex {
   /// The capture group that wraps each rule, in rule order, then the group
   /// count plus one. Rule `n` owns the groups from `_ruleStarts[n]` up to,
   /// but not including, `_ruleStarts[n + 1]`.
-  List<int> _ruleStarts = const [];
-  List<int> _groupCounts = const [];
+  final List<int> _ruleStarts = [];
 
   /// The id of each rule's regex in [table].
   final List<int> _ruleIds = [];
@@ -26,36 +70,31 @@ class MultiRegex {
 
   MultiRegex(this.langRe, [this.table]);
 
-  void addRule(RegExp re, Map<String, dynamic> opts) {
+  void addRule(RegExp re, MatchRule rule) {
     _ruleIds.add(table?.idOf(re) ?? -1);
-    opts['position'] = position++;
-    matchIndexes[matchAt] = opts;
-    regexes.add([opts, re]);
+    rule.position = _rules.length;
+    _rules.add(rule);
+    _regexes.add(re);
+    _ruleStarts.add(matchAt);
     matchAt += regex.countMatchGroups(re) + 1;
   }
 
   void compile() {
-    if (regexes.isEmpty) {
+    if (_regexes.isEmpty) {
       matcherRe = null;
       return;
     }
-    final terminators = regexes.map((el) => el[1] as RegExp).toList();
     matcherRe = langRe(
-      regex.rewriteBackreferences(
-        terminators.map((t) => t.pattern).toList(),
-        joinWith: '|',
-      ),
+      regex.rewriteBackreferences([
+        for (final re in _regexes) re.pattern,
+      ], joinWith: '|'),
       true,
     );
-    _ruleStarts = [...matchIndexes.keys, matchAt];
-    _groupCounts = [
-      for (var i = 0; i + 1 < _ruleStarts.length; i++)
-        _ruleStarts[i + 1] - _ruleStarts[i] - 1,
-    ];
+    _ruleStarts.add(matchAt);
     lastIndex = 0;
   }
 
-  Map<String, dynamic>? exec(String s, [RuleMatchCache? cache]) {
+  RuleMatch? exec(String s, [RuleMatchCache? cache]) {
     final re = matcherRe;
     if (re == null || lastIndex > s.length) return null;
     final from = lastIndex < 0 ? 0 : lastIndex;
@@ -69,7 +108,7 @@ class MultiRegex {
     _lastFrom = from;
     if (cache != null &&
         table != null &&
-        regexes.length > 1 &&
+        _rules.length > 1 &&
         (debugRuleAtATime ??
             _scanned > _calls * _sparseUnits && _scanned * 2 > _span)) {
       return _execPerRule(s, from, cache);
@@ -84,29 +123,20 @@ class MultiRegex {
     // inside each rule.
     final starts = _ruleStarts;
     final last = starts.length - 1;
-    String? lexeme;
-    var rule = 0;
-    for (; rule < last; rule++) {
-      lexeme = match.group(starts[rule]);
-      if (lexeme != null) break;
+    for (var rule = 0; rule < last; rule++) {
+      final first = starts[rule];
+      final lexeme = match.group(first);
+      if (lexeme != null) {
+        return RuleMatch._(
+          _rules[rule],
+          match,
+          lexeme,
+          first,
+          starts[rule + 1] - first - 1,
+        );
+      }
     }
-    if (lexeme == null) return null;
-
-    final first = starts[rule];
-    final end = starts[rule + 1];
-    final groups = List<String?>.filled(end - first, null);
-    groups[0] = lexeme;
-    for (var g = first + 1; g < end; g++) {
-      groups[g - first] = match.group(g);
-    }
-
-    return <String, dynamic>{
-      ...matchIndexes[first]!,
-      'index': match.start,
-      '_match': match,
-      '_groups': groups,
-      '0': lexeme,
-    };
+    return null;
   }
 
   // The joined regex is slow for each unit that it scans, because it tries
@@ -131,7 +161,7 @@ class MultiRegex {
 
   /// The leftmost match of any rule at or after [from]; the first rule wins
   /// at equal positions. This is what the joined regex gives.
-  Map<String, dynamic>? _execPerRule(String s, int from, RuleMatchCache cache) {
+  RuleMatch? _execPerRule(String s, int from, RuleMatchCache cache) {
     final table = this.table!;
     if (!identical(cache._table, table)) cache._reset(table);
     final starts = cache._starts;
@@ -159,14 +189,13 @@ class MultiRegex {
     _scanned += (best < 0 ? s.length : bestStart) - from;
     if (best < 0) return null;
     final match = matches[bestId]!;
-    final groups = List<String?>.generate(_groupCounts[best] + 1, match.group);
-    return <String, dynamic>{
-      ...regexes[best][0] as Map<String, dynamic>,
-      'index': bestStart,
-      '_match': match,
-      '_groups': groups,
-      '0': groups[0],
-    };
+    return RuleMatch._(
+      _rules[best],
+      match,
+      match.group(0)!,
+      0,
+      _ruleStarts[best + 1] - _ruleStarts[best] - 1,
+    );
   }
 }
 
@@ -204,7 +233,7 @@ class RuleMatchCache {
 }
 
 class ResumableMultiRegex {
-  final List<List<dynamic>> rules = [];
+  final List<(RegExp, MatchRule)> rules = [];
   final Map<int, MultiRegex> multiRegexes = {};
   int count = 0;
   int lastIndex = 0;
@@ -215,12 +244,13 @@ class ResumableMultiRegex {
   ResumableMultiRegex(this.langRe, [this.table]);
 
   MultiRegex getMatcher(int index) {
-    if (multiRegexes.containsKey(index)) return multiRegexes[index]!;
+    final existing = multiRegexes[index];
+    if (existing != null) return existing;
 
     final matcher = MultiRegex(langRe, table);
     for (var i = index; i < rules.length; i++) {
-      final rule = rules[i];
-      matcher.addRule(rule[0] as RegExp, rule[1] as Map<String, dynamic>);
+      final (re, rule) = rules[i];
+      matcher.addRule(re, rule);
     }
     matcher.compile();
     multiRegexes[index] = matcher;
@@ -235,21 +265,21 @@ class ResumableMultiRegex {
     regexIndex = 0;
   }
 
-  void addRule(RegExp re, Map<String, dynamic> opts) {
+  void addRule(RegExp re, MatchRule rule) {
     // Give the id now. Matchers are built on first use, after a parse has
     // sized its cache.
     table?.idOf(re);
-    rules.add([re, opts]);
-    if (opts['type'] == 'begin') count++;
+    rules.add((re, rule));
+    if (rule.type == MatchType.begin) count++;
   }
 
-  Map<String, dynamic>? exec(String s, [RuleMatchCache? cache]) {
+  RuleMatch? exec(String s, [RuleMatchCache? cache]) {
     final m = getMatcher(regexIndex);
     m.lastIndex = lastIndex;
     var result = m.exec(s, cache);
 
     if (resumingScanAtSamePosition()) {
-      if (result != null && result['index'] == lastIndex) {
+      if (result != null && result.index == lastIndex) {
         // valid resume
       } else {
         final m2 = getMatcher(0);
@@ -259,7 +289,7 @@ class ResumableMultiRegex {
     }
 
     if (result != null) {
-      regexIndex += (result['position'] as int) + 1;
+      regexIndex += result.rule.position + 1;
       if (regexIndex == count) {
         considerAll();
       }
@@ -281,18 +311,18 @@ ResumableMultiRegex buildModeRegex(
     if (term is Mode) {
       final beginRe = term.beginRe;
       if (beginRe != null) {
-        mm.addRule(beginRe, {'rule': term, 'type': 'begin'});
+        mm.addRule(beginRe, MatchRule(MatchType.begin, term));
       }
     }
   }
 
   final terminatorEnd = mode.terminatorEnd;
   if (terminatorEnd != null && terminatorEnd.isNotEmpty) {
-    mm.addRule(langRe(terminatorEnd, false), {'type': 'end'});
+    mm.addRule(langRe(terminatorEnd, false), MatchRule(MatchType.end));
   }
   final illegalRe = mode.illegalRe;
   if (illegalRe != null) {
-    mm.addRule(illegalRe, {'type': 'illegal'});
+    mm.addRule(illegalRe, MatchRule(MatchType.illegal));
   }
 
   return mm;
