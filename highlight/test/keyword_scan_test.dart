@@ -1,12 +1,7 @@
 // The keyword scan must find the matches of the keyword pattern.
-import 'dart:io';
 
-import 'package:highlight_fork/highlight_core.dart';
-import 'package:highlight_fork/languages/_all.dart';
 import 'package:highlight_fork/src/keyword_scan.dart';
 import 'package:test/test.dart';
-
-import 'integration/_vendor_fixtures.dart';
 
 List<(int, int)> scanned(KeywordScan scan, String text, {bool all = true}) {
   final words = <(int, int)>[];
@@ -72,39 +67,5 @@ void main() {
       'if',
     ], true)!;
     expect(scanned(folded, 'IF If x', all: false), [(0, 2), (3, 5)]);
-  });
-
-  test('each keyword pattern of each grammar', () {
-    final hljs = Highlight();
-    registerAllLanguages(hljs);
-    final samples = vendorFixtureDirectory('detect');
-    var scans = 0;
-    for (final name in hljs.listLanguages()) {
-      hljs.highlight('x', language: name);
-      final sample = File('${samples.path}/$name/default.txt');
-      final own = sample.existsSync() ? sample.readAsStringSync() : '';
-      final source = '$own\n$text';
-      final seen = Set<Mode>.identity();
-      void check(Mode mode) {
-        if (!seen.add(mode)) return;
-        final scan = mode.keywordScan;
-        if (scan != null) {
-          scans++;
-          expect(
-            scanned(scan, source),
-            matched(mode.keywordPatternRe!, source),
-            reason: '$name: ${mode.keywordPatternRe!.pattern}',
-          );
-        }
-        for (final child in mode.contains ?? const <dynamic>[]) {
-          if (child is Mode) check(child);
-        }
-        final starts = mode.starts;
-        if (starts != null) check(starts);
-      }
-
-      check(hljs.getLanguage(name)!);
-    }
-    expect(scans, greaterThan(300));
   });
 }

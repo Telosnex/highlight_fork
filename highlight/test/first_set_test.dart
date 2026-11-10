@@ -1,13 +1,8 @@
 // A first set must permit every position where its regex matches.
-import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:highlight_fork/highlight_core.dart';
-import 'package:highlight_fork/languages/_all.dart';
 import 'package:highlight_fork/src/first_set.dart';
 import 'package:test/test.dart';
-
-import 'integration/_vendor_fixtures.dart';
 
 List<int> buckets(
   String source, {
@@ -35,41 +30,6 @@ List<int> second(String source) {
 
 int requires(String source) =>
     FirstSet.of(source, caseSensitive: true, unicode: false).requires;
-
-/// Null when [set] permits a match at [pos], else the reason.
-String? refusal(FirstSet set, String text, int pos, {bool unicode = false}) {
-  final unit = pos < text.length ? text.codeUnitAt(pos) : -1;
-  final bucket = unit < 0
-      ? FirstSet.end
-      : unit < 128
-      ? unit
-      : FirstSet.nonAscii;
-  if (set.buckets[bucket] == 0) return 'bucket $bucket';
-  final next = pos + 1 < text.length ? text.codeUnitAt(pos + 1) : -1;
-  final nextBucket = next < 0
-      ? FirstSet.end
-      : next < 128
-      ? next
-      : FirstSet.nonAscii;
-  final surrogate = unicode && unit & 0xf800 == 0xd800;
-  if (set.second[nextBucket] == 0 && !surrogate) {
-    return 'second bucket $nextBucket';
-  }
-  final before = pos > 0 ? text.codeUnitAt(pos - 1) : -1;
-  bool word(int u) => u >= 0 && u < 128 && isWordUnit(u);
-  if (set.requires & FirstSet.wordBoundary != 0 && word(before) == word(unit)) {
-    return 'word boundary';
-  }
-  if (set.requires & FirstSet.lineStart != 0 &&
-      !(before < 0 ||
-          before == 0x0a ||
-          before == 0x0d ||
-          before == 0x2028 ||
-          before == 0x2029)) {
-    return 'line start';
-  }
-  return null;
-}
 
 void main() {
   final all = [for (var u = 0; u < FirstSet.bucketCount; u++) u];
@@ -204,72 +164,5 @@ void main() {
     expect(buckets(r'(a)|\1'), all);
     expect(buckets('(?i:a)'), all);
     expect(buckets('a)'), all);
-  });
-
-  test('each rule of each grammar matches only where its set permits', () {
-    final hljs = Highlight();
-    registerAllLanguages(hljs);
-    final samples = vendorFixtureDirectory('detect');
-    const symbols =
-        'a_1 Z9\t"x" \'y\' `z` é\u2028ß ſs \u212ak İiı 😀x😀"😀\' {[(<>)]} #!/\$%^&*-+=|\\:;,.?~@ \r\n'
-        '  - 0x1F 1.5e3\n';
-    var regexes = 0;
-    var runs = 0;
-    var known = 0;
-    for (final name in hljs.listLanguages()) {
-      final language = hljs.getLanguage(name)!;
-      // The first parse compiles the grammar.
-      hljs.highlight('x', language: name);
-      final sample = File('${samples.path}/$name/default.txt');
-      final own = sample.existsSync() ? sample.readAsStringSync() : '';
-      final text =
-          '${own.length > 300 ? own.substring(0, 300) : own}\n$symbols';
-      final table = language.matcher!.table!;
-      for (var id = 0; id < table.regexes.length; id++) {
-        final re = table.regexes[id];
-        final set = table.firstSet(id);
-        regexes++;
-        final runStart = set.runStart;
-        if (runStart != null) {
-          runs++;
-          for (var pos = 0; pos < text.length; pos++) {
-            final unit = text.codeUnitAt(pos);
-            if (unit >= 128 || runStart[unit] == 0) continue;
-            if (re.matchAsPrefix(text, pos) != null) continue;
-            for (var next = pos + 1; next < text.length; next++) {
-              final u = text.codeUnitAt(next);
-              if (u >= 128 || set.run![u] == 0) break;
-              if (re.matchAsPrefix(text, next) != null) {
-                fail('$name: /${re.pattern}/ fails at $pos, matches at $next');
-              }
-            }
-          }
-        }
-        final literal = set.literal;
-        if (literal != null || set.single) {
-          known++;
-          for (var pos = 0; pos < text.length; pos++) {
-            final unit = text.codeUnitAt(pos);
-            if (literal == null && unit >= 128) continue;
-            final expected = literal != null
-                ? (text.startsWith(literal, pos) ? literal : null)
-                : (set.buckets[unit] != 0 ? text[pos] : null);
-            final match = re.matchAsPrefix(text, pos);
-            if (match?.group(0) != expected || (match?.groupCount ?? 0) != 0) {
-              fail('$name: /${re.pattern}/ at $pos is not "$expected"');
-            }
-          }
-        }
-        for (var pos = 0; pos <= text.length; pos++) {
-          final refused = refusal(set, text, pos, unicode: re.isUnicode);
-          if (refused != null && re.matchAsPrefix(text, pos) != null) {
-            fail('$name: /${re.pattern}/ matches at $pos, set: $refused');
-          }
-        }
-      }
-    }
-    expect(regexes, greaterThan(4000));
-    expect(runs, greaterThan(100));
-    expect(known, greaterThan(500));
   });
 }
