@@ -9,8 +9,16 @@ import 'package:test/test.dart';
 
 import 'integration/_vendor_fixtures.dart';
 
-List<int> buckets(String source, {bool caseSensitive = true}) {
-  final set = FirstSet.of(source, caseSensitive: caseSensitive, unicode: false);
+List<int> buckets(
+  String source, {
+  bool caseSensitive = true,
+  bool unicode = false,
+}) {
+  final set = FirstSet.of(
+    source,
+    caseSensitive: caseSensitive,
+    unicode: unicode,
+  );
   return [
     for (var b = 0; b < FirstSet.bucketCount; b++)
       if (set.buckets[b] != 0) b,
@@ -169,8 +177,10 @@ void main() {
   });
 
   test('case', () {
-    expect(buckets('a', caseSensitive: false), [
-      ...units('Aa'),
+    expect(buckets('a', caseSensitive: false), units('Aa'));
+    // With `iu`, `k` also matches the Kelvin sign.
+    expect(buckets('k', caseSensitive: false, unicode: true), [
+      ...units('Kk'),
       FirstSet.nonAscii,
     ]);
     expect(
@@ -181,8 +191,10 @@ void main() {
 
   test('the complement of a class that has too many units is every unit', () {
     final units = [...all]..remove(FirstSet.end);
-    expect(buckets('[^\\u2401=]', caseSensitive: false), units);
-    expect(buckets('[^é]', caseSensitive: false), units);
+    // With `iu`, a letter outside ASCII can match an ASCII letter, and the
+    // set does not know which.
+    expect(buckets('[^é]', caseSensitive: false, unicode: true), units);
+    expect(buckets('[^é=]', caseSensitive: false), [...units]..remove(0x3d));
   });
 
   test('backreferences and unknown syntax permit every position', () {
@@ -196,7 +208,7 @@ void main() {
     registerAllLanguages(hljs);
     final samples = vendorFixtureDirectory('detect');
     const symbols =
-        'a_1 Z9\t"x" \'y\' `z` é\u2028ß {[(<>)]} #!/\$%^&*-+=|\\:;,.?~@ \r\n'
+        'a_1 Z9\t"x" \'y\' `z` é\u2028ß ſs \u212ak İiı {[(<>)]} #!/\$%^&*-+=|\\:;,.?~@ \r\n'
         '  - 0x1F 1.5e3\n';
     var regexes = 0;
     var runs = 0;

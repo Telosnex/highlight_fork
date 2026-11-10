@@ -33,6 +33,9 @@ class FirstSet {
   final Uint8List? runStart;
   final Uint8List? run;
 
+  /// The regex is only the run: `\w+` or `[a-z]\w*`.
+  final bool runOnly;
+
   /// The regex matches exactly this text and has no groups. Else null.
   final String? literal;
 
@@ -48,6 +51,7 @@ class FirstSet {
     this.run,
     this.literal,
     this.single = false,
+    this.runOnly = false,
   ]);
 
   /// A set that permits every position. It is correct for every regex.
@@ -84,6 +88,7 @@ class FirstSet {
         parser.run,
         caseSensitive ? _literal(source) : null,
         parser.single,
+        parser.runOnly,
       );
     } on FormatException {
       return FirstSet.all();
@@ -169,6 +174,11 @@ class _Parser {
 
   _Parser(this.src, this.ignoreCase, this.unicode);
 
+  /// With `iu`, `s` and `k` each match a letter outside ASCII, and the
+  /// reverse. Without `u`, a regex that ignores case does not mix an ASCII
+  /// unit with a unit outside ASCII.
+  bool get _foldsOutsideAscii => ignoreCase && unicode;
+
   Never _fail() => throw const FormatException();
 
   // The first two terms of the regex, when it has no alternatives.
@@ -182,6 +192,10 @@ class _Parser {
   Uint8List? runStart;
   Uint8List? run;
   bool single = false;
+  bool runOnly = false;
+
+  /// One of the first two terms does not take the longest match.
+  bool _lazy = false;
 
   _Node parseAll() {
     final node = _disjunction();
@@ -198,11 +212,13 @@ class _Parser {
     if (!_topAlternatives && unit0 != null) {
       if (_quantifier0 == plus) {
         runStart = run = unit0;
+        runOnly = _topTerms == 1 && !_lazy;
       } else if (_quantifier0 == 0 &&
           unit1 != null &&
           (_quantifier1 == plus || _quantifier1 == star)) {
         runStart = unit0;
         run = unit1;
+        runOnly = _topTerms == 2 && _quantifier1 == star && !_lazy;
       }
     }
     return node;
@@ -329,7 +345,10 @@ class _Parser {
       _lastQuantifier = 0;
       return atom;
     }
-    if (i < src.length && src.codeUnitAt(i) == 0x3f /* ? */ ) i++;
+    if (i < src.length && src.codeUnitAt(i) == 0x3f /* ? */ ) {
+      i++;
+      if (_depth == 0 && _topTerms < 2) _lazy = true;
+    }
     if (identical(atom, _closed)) return atom;
     // A second pass can start at the second unit.
     var second = atom.second;
@@ -520,7 +539,7 @@ class _Parser {
         for (var u = 0; u < 128; u++) {
           if (isWordUnit(u)) set[u] = 1;
         }
-        if (ignoreCase) set[FirstSet.nonAscii] = 1;
+        if (_foldsOutsideAscii) set[FirstSet.nonAscii] = 1;
       case 0x57: // W
         for (var u = 0; u <= FirstSet.nonAscii; u++) {
           if (!isWordUnit(u)) set[u] = 1;
@@ -603,13 +622,13 @@ class _Parser {
     if (u >= 128) {
       set[FirstSet.nonAscii] = 1;
       // With `iu`, some letters outside ASCII match ASCII letters.
-      if (ignoreCase) _addLetters(set);
+      if (_foldsOutsideAscii) _addLetters(set);
       return;
     }
     set[u] = 1;
     if (ignoreCase && _isLetter(u)) {
       set[u ^ 0x20] = 1;
-      set[FirstSet.nonAscii] = 1;
+      if (_foldsOutsideAscii) set[FirstSet.nonAscii] = 1;
     }
   }
 
@@ -651,7 +670,7 @@ class _Parser {
         if (high < low) _fail();
         if (high >= 128) {
           set[FirstSet.nonAscii] = 1;
-          if (ignoreCase) _addLetters(set);
+          if (_foldsOutsideAscii) _addLetters(set);
         }
         for (var u = low; u <= high && u < 128; u++) {
           _addUnit(set, u);

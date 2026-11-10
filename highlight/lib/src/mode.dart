@@ -1,3 +1,4 @@
+import 'keyword_scan.dart';
 import 'mode_compiler.dart';
 
 typedef ModeCallback =
@@ -62,6 +63,7 @@ class Mode {
   RegExp? endRe;
   RegExp? illegalRe;
   RegExp? keywordPatternRe;
+  KeywordScan? keywordScan;
   ResumableMultiRegex? matcher;
   String? terminatorEnd;
   bool isCompiled = false;
@@ -275,6 +277,7 @@ class Mode {
     copy.endRe = endRe;
     copy.illegalRe = illegalRe;
     copy.keywordPatternRe = keywordPatternRe;
+    copy.keywordScan = keywordScan;
     copy.matcher = matcher;
     copy.terminatorEnd = terminatorEnd;
     copy.isCompiled = isCompiled;

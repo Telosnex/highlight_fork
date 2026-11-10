@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
 import 'first_set.dart';
+import 'keyword_scan.dart';
 import 'mode.dart';
 import 'regex.dart' as regex;
 import 'compiler_extensions.dart' as ext;
@@ -649,7 +650,16 @@ Mode compileLanguage(Mode language) {
       );
     }
 
-    mode.keywordPatternRe = langRe(keywordPattern, true);
+    final keywordPatternRe = langRe(keywordPattern, true);
+    mode.keywordPatternRe = keywordPatternRe;
+    final compiledKeywords = mode.compiledKeywords;
+    if (compiledKeywords != null) {
+      mode.keywordScan = KeywordScan.of(
+        keywordPatternRe,
+        compiledKeywords.keys,
+        language.caseInsensitive == true,
+      );
+    }
 
     if (parent != null) {
       mode.begin ??= r'\B|\b';

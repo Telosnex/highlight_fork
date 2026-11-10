@@ -318,15 +318,15 @@ class Highlight {
       var plainStart = 0;
       final caseInsensitive = language.caseInsensitive == true;
 
-      for (final match in keywordPatternRe.allMatches(text)) {
-        final matched = match.group(0)!;
+      void onWord(int start, int end) {
+        final matched = text.substring(start, end);
         final word = caseInsensitive ? matched.toLowerCase() : matched;
         final data = keywords[word];
-        if (data == null) continue;
+        if (data == null) return;
         final kind = data[0] as String;
         final keywordRelevance = data[1] as num;
-        emitter.addText(text.substring(plainStart, match.start));
-        plainStart = match.start;
+        emitter.addText(text.substring(plainStart, start));
+        plainStart = start;
 
         final hits = (keywordHits[word] ?? 0) + 1;
         keywordHits[word] = hits;
@@ -336,7 +336,16 @@ class Highlight {
         if (!kind.startsWith('_')) {
           final cssClass = _classNameAlias(language, kind) ?? kind;
           emitKeyword(matched, cssClass);
-          plainStart = match.end;
+          plainStart = end;
+        }
+      }
+
+      final scan = top.keywordScan;
+      if (scan != null) {
+        scan.forEachWord(text, onWord);
+      } else {
+        for (final match in keywordPatternRe.allMatches(text)) {
+          onWord(match.start, match.end);
         }
       }
       emitter.addText(plainStart == 0 ? text : text.substring(plainStart));
