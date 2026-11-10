@@ -107,31 +107,20 @@ class HighlightResult {
 class _CallbackRegExpMatch implements RegExpMatch {
   final RegExpMatch _inner;
   final List<String?> _groups;
-  final String? _inputOverride;
-  final int? _startOverride;
-  final int? _endOverride;
 
-  _CallbackRegExpMatch(
-    this._inner,
-    this._groups, {
-    String? input,
-    int? start,
-    int? end,
-  }) : _inputOverride = input,
-       _startOverride = start,
-       _endOverride = end;
+  _CallbackRegExpMatch(this._inner, this._groups);
 
   @override
   RegExp get pattern => _inner.pattern;
 
   @override
-  String get input => _inputOverride ?? _inner.input;
+  String get input => _inner.input;
 
   @override
-  int get start => _startOverride ?? _inner.start;
+  int get start => _inner.start;
 
   @override
-  int get end => _endOverride ?? _inner.end;
+  int get end => _inner.end;
 
   @override
   int get groupCount => _groups.isEmpty ? 0 : _groups.length - 1;
@@ -250,20 +239,9 @@ class Highlight {
     RegExpMatch? directRuleMatch(RegExp? re, Map<String, dynamic> match) {
       if (re == null) return null;
       final start = match['index'] as int? ?? 0;
-      final remainder = codeToHighlight.substring(start);
-      final direct = re.firstMatch(remainder);
-      if (direct == null || direct.start != 0) return null;
-      final groups = List<String?>.generate(
-        direct.groupCount + 1,
-        direct.group,
-      );
-      return _CallbackRegExpMatch(
-        direct,
-        groups,
-        input: codeToHighlight,
-        start: start,
-        end: start + direct.end,
-      );
+      // Match in place. A substring of the remaining source here made every
+      // begin match copy the rest of the document.
+      return re.matchAsPrefix(codeToHighlight, start) as RegExpMatch?;
     }
 
     final language = getLanguage(languageName);
@@ -450,15 +428,14 @@ class Highlight {
       return top;
     }
 
-    Mode? endOfMode(
-      Mode mode,
-      Map<String, dynamic> match,
-      String matchPlusRemainder,
-    ) {
-      final endRe = mode.endRe;
-      final matched = endRe?.firstMatch(matchPlusRemainder);
+    Mode? endOfMode(Mode mode, int matchIndex) {
+      // Match in place. A substring of the remaining source here made every
+      // end match copy the rest of the document.
+      final matched =
+          mode.endRe?.matchAsPrefix(codeToHighlight, matchIndex)
+              as RegExpMatch?;
 
-      if (matched != null && matched.start == 0) {
+      if (matched != null) {
         final onEnd = mode.onEnd;
         if (onEnd != null) {
           mode.data ??= {};
@@ -473,7 +450,7 @@ class Highlight {
         return mode;
       }
       if (mode.endsWithParent == true) {
-        return endOfMode(mode.parent!, match, matchPlusRemainder);
+        return endOfMode(mode.parent!, matchIndex);
       }
       return null;
     }
@@ -528,9 +505,7 @@ class Highlight {
         0,
         codeToHighlight.length,
       );
-      final matchPlusRemainder = codeToHighlight.substring(matchIndex);
-
-      final endMode = endOfMode(top, match, matchPlusRemainder);
+      final endMode = endOfMode(top, matchIndex);
       if (endMode == null) return noMatch;
 
       final origin = top;
