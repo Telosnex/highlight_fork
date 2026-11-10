@@ -379,7 +379,9 @@ class Highlight {
       modeBuffer.clear();
     };
 
-    Mode startNewMode(Mode mode, RuleMatch match) {
+    // [mode] is a rule of the grammar, which many parses share, so the open
+    // mode is a copy. With [owned], the caller made that copy already.
+    Mode startNewMode(Mode mode, RuleMatch match, {bool owned = false}) {
       final scope = mode.scope;
       if (mode.skip != true && scope is String && scope.isNotEmpty) {
         emitter.openNode(_classNameAlias(language, scope) ?? scope);
@@ -398,7 +400,7 @@ class Highlight {
         }
       }
 
-      top = mode.shallowCopy()
+      top = (owned ? mode : mode.shallowCopy())
         ..parent = top
         ..modeId = ++modeIdCounter;
       return top;
@@ -472,7 +474,7 @@ class Highlight {
           modeBuffer.write(lexeme);
         }
       }
-      startNewMode(newMode, match);
+      startNewMode(newMode, match, owned: true);
       return newMode.returnBegin == true ? 0 : lexeme.length;
     }
 

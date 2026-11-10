@@ -63,6 +63,7 @@ class MultiRegex {
   /// count plus one. Rule `n` owns the groups from `_ruleStarts[n]` up to,
   /// but not including, `_ruleStarts[n + 1]`.
   final List<int> _ruleStarts = [];
+  List<int> _testOrder = const [];
 
   /// The id of each rule's regex in [table].
   final List<int> _ruleIds = [];
@@ -91,6 +92,7 @@ class MultiRegex {
       true,
     );
     _ruleStarts.add(matchAt);
+    _testOrder = List<int>.generate(_rules.length, (i) => i);
     lastIndex = 0;
   }
 
@@ -120,13 +122,19 @@ class MultiRegex {
 
     // Exactly one rule matched: the one whose wrapping group took part. That
     // group is the whole match. Test only the wrapping groups, not the groups
-    // inside each rule.
+    // inside each rule. Each test is a call into the VM, so test the rules
+    // that matched most often first: a hit moves its rule one place forward.
     final starts = _ruleStarts;
-    final last = starts.length - 1;
-    for (var rule = 0; rule < last; rule++) {
+    final order = _testOrder;
+    for (var i = 0; i < order.length; i++) {
+      final rule = order[i];
       final first = starts[rule];
       final lexeme = match.group(first);
       if (lexeme != null) {
+        if (i > 0) {
+          order[i] = order[i - 1];
+          order[i - 1] = rule;
+        }
         return RuleMatch._(
           _rules[rule],
           match,
