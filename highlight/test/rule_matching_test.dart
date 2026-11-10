@@ -1,18 +1,26 @@
-// The matcher finds the next rule in two ways and picks one by how the mode
-// scans. Both ways must give the same tokens.
+// The matcher finds the next rule in three ways. All must give the same
+// tokens.
+import 'dart:io';
+
 import 'package:highlight_fork/highlight.dart' as hi;
+import 'package:highlight_fork/languages/_all.dart';
 import 'package:highlight_fork/src/mode_compiler.dart';
 import 'package:test/test.dart';
 
 import '../tool/eval_support.dart';
+import 'integration/_vendor_fixtures.dart';
 import 'perf/corpus.dart';
 
 void main() {
   setUpAll(hi.ensureInitialized);
-  tearDown(() => MultiRegex.debugRuleAtATime = null);
+  tearDown(() => MultiRegex.debugStrategy = null);
 
-  List<List<String>> parse(String language, String source, bool ruleAtATime) {
-    MultiRegex.debugRuleAtATime = ruleAtATime;
+  List<List<String>> parse(
+    String language,
+    String source,
+    MatchStrategy strategy,
+  ) {
+    MultiRegex.debugStrategy = strategy;
     final result = hi.hljs.highlight(source, language: language);
     expect(result.errorRaised, isNull);
     return flatten(result);
@@ -26,9 +34,11 @@ void main() {
   };
 
   for (final MapEntry(key: name, value: source) in sources.entries) {
-    test('joined regex and rule regexes agree: $name', () {
+    test('all strategies agree: $name', () {
       final language = name.split(' ').first;
-      expect(parse(language, source, true), parse(language, source, false));
+      final joined = parse(language, source, MatchStrategy.joined);
+      expect(parse(language, source, MatchStrategy.ruleAtATime), joined);
+      expect(parse(language, source, MatchStrategy.dispatch), joined);
     });
   }
 
@@ -36,11 +46,30 @@ void main() {
     // Text that a grammar does not expect uses its illegal and fallback rules.
     final text = corpus.values.map((source) => sized(source, 1024)).join();
     for (final language in hi.hljs.listLanguages()) {
-      expect(
-        parse(language, text, true),
-        parse(language, text, false),
-        reason: language,
-      );
+      final joined = parse(language, text, MatchStrategy.joined);
+      for (final strategy in MatchStrategy.values) {
+        expect(parse(language, text, strategy), joined, reason: language);
+      }
+    }
+  });
+
+  test('every grammar agrees on its sample and on other languages', () {
+    final all = hi.Highlight();
+    registerAllLanguages(all);
+    final other = corpus.values.map((source) => sized(source, 512)).join();
+    final samples = vendorFixtureDirectory('detect');
+    for (final language in all.listLanguages()) {
+      final sample = File('${samples.path}/$language/default.txt');
+      final text = sample.existsSync()
+          ? '${sample.readAsStringSync()}\n$other'
+          : other;
+      List<Object> run(MatchStrategy strategy) {
+        MultiRegex.debugStrategy = strategy;
+        return flatten(all.highlight(text, language: language));
+      }
+
+      final joined = run(MatchStrategy.joined);
+      expect(run(MatchStrategy.dispatch), joined, reason: language);
     }
   });
 }

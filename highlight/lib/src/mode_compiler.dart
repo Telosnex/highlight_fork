@@ -1,3 +1,4 @@
+import 'first_set.dart';
 import 'mode.dart';
 import 'regex.dart' as regex;
 import 'compiler_extensions.dart' as ext;
@@ -108,12 +109,19 @@ class MultiRegex {
     _calls++;
     if (from >= _lastFrom) _span += from - _lastFrom;
     _lastFrom = from;
-    if (cache != null &&
-        table != null &&
-        _rules.length > 1 &&
-        (debugRuleAtATime ??
-            _scanned > _calls * _sparseUnits && _scanned * 2 > _span)) {
-      return _execPerRule(s, from, cache);
+    final table = this.table;
+    if (table != null) {
+      final strategy = debugStrategy;
+      if (strategy == null ? !_isWeb : strategy == MatchStrategy.dispatch) {
+        return _execDispatch(s, from, table);
+      }
+      if (cache != null &&
+          _rules.length > 1 &&
+          (strategy == null
+              ? _scanned > _calls * _sparseUnits && _scanned * 2 > _span
+              : strategy == MatchStrategy.ruleAtATime)) {
+        return _execPerRule(s, from, cache);
+      }
     }
 
     final match = re.allMatches(s, from).firstOrNull;
@@ -147,6 +155,88 @@ class MultiRegex {
     return null;
   }
 
+  // The VM interprets a regex, and the joined regex tries every rule at
+  // every position. Most rules can start with only a few code units. So read
+  // the source here: at each position, try only the rules that can start
+  // with the unit there, in rule order. The first rule that matches is the
+  // match of the joined regex. Most positions have no such rule and cost one
+  // table read.
+  List<List<int>?>? _dispatch;
+  List<int> _requires = const [];
+  bool _unicode = false;
+
+  void _buildDispatch(RegexTable table) {
+    final sets = [for (final id in _ruleIds) table.firstSet(id)];
+    _requires = [for (final set in sets) set.requires];
+    _unicode = _regexes.any((re) => re.isUnicode);
+    final shared = <String, List<int>>{};
+    _dispatch = List<List<int>?>.generate(FirstSet.bucketCount, (bucket) {
+      final rules = [
+        for (var r = 0; r < sets.length; r++)
+          if (sets[r].buckets[bucket] != 0) r,
+      ];
+      if (rules.isEmpty) return null;
+      return shared[rules.join(',')] ??= rules;
+    });
+  }
+
+  RuleMatch? _execDispatch(String s, int from, RegexTable table) {
+    if (_dispatch == null) _buildDispatch(table);
+    final dispatch = _dispatch!;
+    final requires = _requires;
+    final regexes = _regexes;
+    final length = s.length;
+    for (var pos = from; pos <= length; pos++) {
+      var unit = -1;
+      List<int>? rules;
+      if (pos < length) {
+        unit = s.codeUnitAt(pos);
+        rules = dispatch[unit < 128 ? unit : FirstSet.nonAscii];
+      } else {
+        rules = dispatch[FirstSet.end];
+      }
+      if (rules == null) continue;
+      // A Unicode regex does not start a match inside a surrogate pair.
+      if (_unicode &&
+          pos > from &&
+          unit & 0xfc00 == 0xdc00 &&
+          s.codeUnitAt(pos - 1) & 0xfc00 == 0xd800) {
+        continue;
+      }
+      for (var i = 0; i < rules.length; i++) {
+        final rule = rules[i];
+        final needs = requires[rule];
+        if (needs != 0) {
+          final before = pos > 0 ? s.codeUnitAt(pos - 1) : -1;
+          if (needs & FirstSet.wordBoundary != 0 &&
+              (before >= 0 && before < 128 && isWordUnit(before)) ==
+                  (unit >= 0 && unit < 128 && isWordUnit(unit))) {
+            continue;
+          }
+          if (needs & FirstSet.lineStart != 0 &&
+              !(before < 0 ||
+                  before == 0x0a ||
+                  before == 0x0d ||
+                  before == 0x2028 ||
+                  before == 0x2029)) {
+            continue;
+          }
+        }
+        final match = regexes[rule].matchAsPrefix(s, pos) as RegExpMatch?;
+        if (match != null) {
+          return RuleMatch._(
+            _rules[rule],
+            match,
+            match.group(0)!,
+            0,
+            _ruleStarts[rule + 1] - _ruleStarts[rule] - 1,
+          );
+        }
+      }
+    }
+    return null;
+  }
+
   // The joined regex is slow for each unit that it scans, because it tries
   // every rule at every position. One regex for each rule scans faster, and
   // [RuleMatchCache] keeps the match of a rule until the parse passes it. But
@@ -160,8 +250,8 @@ class MultiRegex {
   // match, so the counts change only the speed.
   static const _sparseUnits = 24;
 
-  /// For tests: true or false makes every matcher use one way.
-  static bool? debugRuleAtATime;
+  /// For tests: makes every matcher use one way.
+  static MatchStrategy? debugStrategy;
   int _calls = 0;
   int _scanned = 0;
   int _span = 0;
@@ -209,6 +299,13 @@ class MultiRegex {
 
 const _noMatch = 0x3fffffffffffffff;
 
+/// On the web, [RegExp] is the regex of the browser, which compiles the
+/// joined regex to machine code. There the joined regex is the fast way.
+const _isWeb = identical(0, 0.0);
+
+/// How a [MultiRegex] finds the next match. All ways give the same match.
+enum MatchStrategy { joined, ruleAtATime, dispatch }
+
 /// The distinct regexes of one compiled language. Equal sources share one
 /// [RegExp], so a rule that is in many modes has one id.
 class RegexTable {
@@ -221,8 +318,20 @@ class RegexTable {
 
   int idOf(RegExp re) => _ids[re] ??= () {
     regexes.add(re);
+    _firstSets.add(null);
     return regexes.length - 1;
   }();
+
+  final List<FirstSet?> _firstSets = [];
+
+  FirstSet firstSet(int id) {
+    final re = regexes[id];
+    return _firstSets[id] ??= FirstSet.of(
+      re.pattern,
+      caseSensitive: re.isCaseSensitive,
+      unicode: re.isUnicode,
+    );
+  }
 }
 
 /// The next match of each regex of a language in one source string. A parse
