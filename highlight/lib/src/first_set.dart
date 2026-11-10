@@ -3,8 +3,9 @@ import 'dart:typed_data';
 /// Where a match of one regex can start.
 ///
 /// A regex can match at a position only if the code unit at that position is
-/// in [buckets] and the position meets [requires]. The answer can be yes for
-/// a position where the regex does not match: the set is the upper limit.
+/// in [buckets], the next code unit is in [second], and the position meets
+/// [requires]. The answer can be yes for a position where the regex does not
+/// match: the sets are the upper limit.
 class FirstSet {
   /// Buckets 0 to 127 are the ASCII code units. [nonAscii] is all other code
   /// units. [end] is the end of the source.
@@ -19,13 +20,15 @@ class FirstSet {
   static const lineStart = 2;
 
   final Uint8List buckets;
+
+  /// The buckets of the code unit after the first one.
+  final Uint8List second;
   final int requires;
 
-  FirstSet._(this.buckets, this.requires);
+  FirstSet._(this.buckets, this.second, this.requires);
 
   /// A set that permits every position. It is correct for every regex.
-  factory FirstSet.all() =>
-      FirstSet._(Uint8List(bucketCount)..fillRange(0, bucketCount, 1), 0);
+  factory FirstSet.all() => FirstSet._(_all(), _everySecond, 0);
 
   /// The set for a JavaScript regex [source]. Syntax that the parser does not
   /// know gives [FirstSet.all].
@@ -45,7 +48,12 @@ class FirstSet {
       final requires = !caseSensitive && unicode
           ? node.requires & ~wordBoundary
           : node.requires;
-      return FirstSet._(buckets, requires);
+      // A match of fewer than two units says nothing about the next unit.
+      // With the Unicode flag, one part of the regex can match two units.
+      final second = unicode || node.length1 || !_isEmptySet(node.empty)
+          ? _everySecond
+          : node.second;
+      return FirstSet._(buckets, second, requires);
     } on FormatException {
       return FirstSet.all();
     }
@@ -60,13 +68,26 @@ class _Node {
   /// The code units before which an empty match is possible.
   final Uint8List empty;
 
+  /// The second code units of the matches that have two or more.
+  final Uint8List second;
+
+  /// A match of one code unit is possible.
+  final bool length1;
+
   /// The [FirstSet.requires] bits that every match meets at its start.
   final int requires;
 
   /// Every match is empty: the part is an assertion.
   final bool zeroWidth;
 
-  _Node(this.nonEmpty, this.empty, this.requires, this.zeroWidth);
+  _Node(
+    this.nonEmpty,
+    this.empty,
+    this.requires,
+    this.zeroWidth, {
+    Uint8List? second,
+    this.length1 = false,
+  }) : second = second ?? _noUnits;
 }
 
 Uint8List _none() => Uint8List(FirstSet.bucketCount);
@@ -85,6 +106,8 @@ bool _isEmptySet(Uint8List set) {
 }
 
 final _closed = _Node(_none(), _none(), 0, false);
+final _noUnits = _none();
+final _everySecond = _all();
 
 class _Parser {
   final String src;
@@ -109,15 +132,19 @@ class _Parser {
       final other = _alternative();
       final nonEmpty = _none();
       final empty = _none();
+      final second = _none();
       for (var b = 0; b < FirstSet.bucketCount; b++) {
         nonEmpty[b] = node.nonEmpty[b] | other.nonEmpty[b];
         empty[b] = node.empty[b] | other.empty[b];
+        second[b] = node.second[b] | other.second[b];
       }
       node = _Node(
         nonEmpty,
         empty,
         node.requires & other.requires,
         node.zeroWidth && other.zeroWidth,
+        second: second,
+        length1: node.length1 || other.length1,
       );
     }
     return node;
@@ -127,28 +154,41 @@ class _Parser {
     // The sequence so far: its first units, and where it can be empty.
     final nonEmpty = _none();
     var empty = _all();
+    final second = _none();
+    var canBeEmpty = true;
+    var length1 = false;
     var requires = 0;
     var zeroWidth = true;
-    // True when the sequence cannot be empty: the rest adds nothing.
+    // True when the sequence has two or more units: the rest adds nothing.
     var closed = false;
     while (i < src.length) {
       final c = src.codeUnitAt(i);
       if (c == 0x7c /* | */ || c == 0x29 /* ) */ ) break;
       final term = _term(closed);
       if (closed) continue;
-      for (var b = 0; b < FirstSet.bucketCount; b++) {
-        nonEmpty[b] |= empty[b] & term.nonEmpty[b];
-      }
+      final termCanBeEmpty = !_isEmptySet(term.empty);
       final nextEmpty = _none();
       for (var b = 0; b < FirstSet.bucketCount; b++) {
+        if (length1) second[b] |= term.nonEmpty[b];
+        if (canBeEmpty) second[b] |= term.second[b];
+        nonEmpty[b] |= empty[b] & term.nonEmpty[b];
         nextEmpty[b] = empty[b] & term.empty[b];
       }
       empty = nextEmpty;
+      length1 = length1 && termCanBeEmpty || canBeEmpty && term.length1;
+      canBeEmpty = canBeEmpty && termCanBeEmpty;
       if (zeroWidth) requires |= term.requires;
       zeroWidth = zeroWidth && term.zeroWidth;
-      closed = _isEmptySet(empty);
+      closed = !canBeEmpty && !length1;
     }
-    return _Node(nonEmpty, empty, requires, zeroWidth);
+    return _Node(
+      nonEmpty,
+      empty,
+      requires,
+      zeroWidth,
+      second: second,
+      length1: length1,
+    );
   }
 
   /// With [skip], the caller ignores the result: only the syntax is read.
@@ -161,8 +201,13 @@ class _Parser {
     if (i >= src.length) return atom;
     final c = src.codeUnitAt(i);
     int min;
-    if (c == 0x2a /* * */ || c == 0x3f /* ? */ ) {
+    var repeats = true;
+    if (c == 0x2a /* * */ ) {
       min = 0;
+      i++;
+    } else if (c == 0x3f /* ? */ ) {
+      min = 0;
+      repeats = false;
       i++;
     } else if (c == 0x2b /* + */ ) {
       min = 1;
@@ -176,8 +221,22 @@ class _Parser {
     }
     if (i < src.length && src.codeUnitAt(i) == 0x3f /* ? */ ) i++;
     if (identical(atom, _closed)) return atom;
-    if (min > 0) return atom;
-    return _Node(atom.nonEmpty, _all(), 0, atom.zeroWidth);
+    // A second pass can start at the second unit.
+    var second = atom.second;
+    if (repeats && atom.length1) {
+      second = _none();
+      for (var b = 0; b < FirstSet.bucketCount; b++) {
+        second[b] = atom.second[b] | atom.nonEmpty[b];
+      }
+    }
+    return _Node(
+      atom.nonEmpty,
+      min > 0 ? atom.empty : _all(),
+      min > 0 ? atom.requires : 0,
+      atom.zeroWidth,
+      second: second,
+      length1: atom.length1,
+    );
   }
 
   /// The minimum of a `{n}`, `{n,}` or `{n,m}` quantifier at [i], or null
@@ -224,7 +283,7 @@ class _Parser {
         final set = _allUnits();
         set[0x0a] = 0;
         set[0x0d] = 0;
-        return _Node(set, _none(), 0, false);
+        return _Node(set, _none(), 0, false, length1: true);
       case 0x5c: // \
         return _escape();
       case 0x2a: // *
@@ -243,7 +302,7 @@ class _Parser {
 
   _Node _units(Uint8List set) {
     set[FirstSet.end] = 0;
-    return _Node(set, _none(), 0, false);
+    return _Node(set, _none(), 0, false, length1: true);
   }
 
   _Node _group() {
@@ -306,23 +365,26 @@ class _Parser {
           final close = src.indexOf('>', i);
           if (close < 0) _fail();
           i = close + 1;
-          return _Node(_allUnits(), _all(), 0, false);
+          return _backreference();
         }
         final set = _none();
         _addUnit(set, 0x6b);
         return _units(set);
     }
     if (c >= 0x31 && c <= 0x39) {
-      // A backreference can match any text, or no text.
       while (i < src.length && _isDigit(src.codeUnitAt(i))) {
         i++;
       }
-      return _Node(_allUnits(), _all(), 0, false);
+      return _backreference();
     }
     final set = _none();
     _escapeUnits(c, set, inClass: false);
     return _units(set);
   }
+
+  /// A backreference can match any text, or no text.
+  _Node _backreference() =>
+      _Node(_allUnits(), _all(), 0, false, second: _allUnits(), length1: true);
 
   /// Adds the units of the escape `\c` to [set]. [i] is after `c`.
   void _escapeUnits(int c, Uint8List set, {required bool inClass}) {
@@ -351,10 +413,7 @@ class _Parser {
         set[FirstSet.nonAscii] = 1;
       case 0x53: // S
         for (var u = 0; u <= FirstSet.nonAscii; u++) {
-          set[u] = 1;
-        }
-        for (final u in const [0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x20]) {
-          set[u] = 0;
+          if (u > 0x20 || u < 0x09 || u > 0x0d && u < 0x20) set[u] = 1;
         }
       case 0x70: // p
       case 0x50: // P

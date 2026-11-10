@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'first_set.dart';
 import 'mode.dart';
 import 'regex.dart' as regex;
@@ -163,11 +165,13 @@ class MultiRegex {
   // table read.
   List<List<int>?>? _dispatch;
   List<int> _requires = const [];
+  List<Uint8List> _seconds = const [];
   bool _unicode = false;
 
   void _buildDispatch(RegexTable table) {
     final sets = [for (final id in _ruleIds) table.firstSet(id)];
     _requires = [for (final set in sets) set.requires];
+    _seconds = [for (final set in sets) set.second];
     _unicode = _regexes.any((re) => re.isUnicode);
     final shared = <String, List<int>>{};
     _dispatch = List<List<int>?>.generate(FirstSet.bucketCount, (bucket) {
@@ -184,6 +188,7 @@ class MultiRegex {
     if (_dispatch == null) _buildDispatch(table);
     final dispatch = _dispatch!;
     final requires = _requires;
+    final seconds = _seconds;
     final regexes = _regexes;
     final length = s.length;
     for (var pos = from; pos <= length; pos++) {
@@ -203,8 +208,15 @@ class MultiRegex {
           s.codeUnitAt(pos - 1) & 0xfc00 == 0xd800) {
         continue;
       }
+      final next = pos + 1 < length ? s.codeUnitAt(pos + 1) : -1;
+      final nextBucket = next < 0
+          ? FirstSet.end
+          : next < 128
+          ? next
+          : FirstSet.nonAscii;
       for (var i = 0; i < rules.length; i++) {
         final rule = rules[i];
+        if (seconds[rule][nextBucket] == 0) continue;
         final needs = requires[rule];
         if (needs != 0) {
           final before = pos > 0 ? s.codeUnitAt(pos - 1) : -1;

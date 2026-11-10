@@ -16,6 +16,14 @@ List<int> buckets(String source, {bool caseSensitive = true}) {
   ];
 }
 
+List<int> second(String source) {
+  final set = FirstSet.of(source, caseSensitive: true, unicode: false);
+  return [
+    for (var b = 0; b < FirstSet.bucketCount; b++)
+      if (set.second[b] != 0) b,
+  ];
+}
+
 int requires(String source) =>
     FirstSet.of(source, caseSensitive: true, unicode: false).requires;
 
@@ -28,6 +36,13 @@ String? refusal(FirstSet set, String text, int pos) {
       ? unit
       : FirstSet.nonAscii;
   if (set.buckets[bucket] == 0) return 'bucket $bucket';
+  final next = pos + 1 < text.length ? text.codeUnitAt(pos + 1) : -1;
+  final nextBucket = next < 0
+      ? FirstSet.end
+      : next < 128
+      ? next
+      : FirstSet.nonAscii;
+  if (set.second[nextBucket] == 0) return 'second bucket $nextBucket';
   final before = pos > 0 ? text.codeUnitAt(pos - 1) : -1;
   bool word(int u) => u >= 0 && u < 128 && isWordUnit(u);
   if (set.requires & FirstSet.wordBoundary != 0 && word(before) == word(unit)) {
@@ -91,6 +106,21 @@ void main() {
     expect(requires(r'\bfoo|bar'), 0);
     expect(requires(r'(?:\bfoo)?bar'), 0);
     expect(requires(r'a\b'), 0);
+  });
+
+  test('the second unit', () {
+    expect(second('abc'), units('b'));
+    expect(second('.?css`'), units('cs'));
+    expect(second('a?b?cd'), units('bcd'));
+    expect(second('a+b'), units('ab'));
+    expect(second('(?:ab)+c'), units('b'));
+    expect(second(r'\bfo|x(?=y)z'), units('oz'));
+    expect(second('[ab][cd]|ef'), units('cdf'));
+    // A match of one unit or of no unit does not limit the next unit.
+    expect(second('a'), all);
+    expect(second('ab?'), all);
+    expect(second('a*'), all);
+    expect(second(r'(.)\1x'), [...all]..remove(FirstSet.end));
   });
 
   test('case', () {
