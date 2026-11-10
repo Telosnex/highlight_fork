@@ -79,6 +79,49 @@ class _OpenMode {
     ..data = _copyData();
 }
 
+/// The text of the open mode that has no scope yet. Almost always it is one
+/// range of the source, and then no text is copied until it is used.
+class _ModeBuffer {
+  final String _source;
+  int _start = 0;
+  int _end = 0;
+
+  /// The text, when it is not the range from [_start] to [_end].
+  StringBuffer? _text;
+
+  _ModeBuffer(this._source);
+
+  bool get isEmpty => _text == null ? _start == _end : _text!.isEmpty;
+
+  /// Adds the source from [start] to [end].
+  void addRange(int start, int end) {
+    if (end <= start) return;
+    final text = _text;
+    if (text != null) {
+      text.write(_source.substring(start, end));
+    } else if (_start == _end) {
+      _start = start;
+      _end = end;
+    } else if (start == _end) {
+      _end = end;
+    } else {
+      write(_source.substring(start, end));
+    }
+  }
+
+  void write(String text) {
+    (_text ??= StringBuffer(_source.substring(_start, _end))).write(text);
+  }
+
+  void clear() {
+    _text = null;
+    _start = _end = 0;
+  }
+
+  @override
+  String toString() => _text?.toString() ?? _source.substring(_start, _end);
+}
+
 class HighlightResult {
   String? _value;
   final String language;
@@ -273,7 +316,7 @@ class Highlight {
       ...?continuation?._sublanguages,
     };
     final emitter = TokenTreeEmitter(options);
-    final modeBuffer = StringBuffer();
+    final modeBuffer = _ModeBuffer(codeToHighlight);
     num relevance = 0;
     var index = 0;
     var iterations = 0;
@@ -510,14 +553,14 @@ class Highlight {
       }
 
       if (newMode.skip == true) {
-        modeBuffer.write(lexeme);
+        modeBuffer.addRange(match.index, match.index + lexeme.length);
       } else {
         if (newMode.excludeBegin == true) {
-          modeBuffer.write(lexeme);
+          modeBuffer.addRange(match.index, match.index + lexeme.length);
         }
         processBuffer();
         if (newMode.returnBegin != true && newMode.excludeBegin != true) {
-          modeBuffer.write(lexeme);
+          modeBuffer.addRange(match.index, match.index + lexeme.length);
         }
       }
       startNewMode(newMode, match, data);
@@ -551,14 +594,14 @@ class Highlight {
         processBuffer();
         emitMultiClass(endScope, match);
       } else if (origin.skip == true) {
-        modeBuffer.write(lexeme);
+        modeBuffer.addRange(match.index, match.index + lexeme.length);
       } else {
         if (origin.returnEnd != true && origin.excludeEnd != true) {
-          modeBuffer.write(lexeme);
+          modeBuffer.addRange(match.index, match.index + lexeme.length);
         }
         processBuffer();
         if (origin.excludeEnd == true) {
-          modeBuffer.write(lexeme);
+          modeBuffer.addRange(match.index, match.index + lexeme.length);
         }
       }
 
@@ -601,7 +644,7 @@ class Highlight {
     // Adds the source from [start] to [end] to the buffer, then handles
     // [match]. Returns the number of units of the lexeme that are consumed.
     int processLexeme(int start, int end, RuleMatch? match) {
-      if (end > start) modeBuffer.write(codeToHighlight.substring(start, end));
+      modeBuffer.addRange(start, end);
 
       if (match == null) {
         processBuffer();
@@ -617,7 +660,7 @@ class Highlight {
           last.index == match.index &&
           lexeme.isEmpty) {
         final mi = match.index;
-        if (mi < codeToHighlight.length) modeBuffer.write(codeToHighlight[mi]);
+        if (mi < codeToHighlight.length) modeBuffer.addRange(mi, mi + 1);
         if (!_safeMode) {
           throw StateError('0 width match regex ($languageName)');
         }
@@ -651,7 +694,7 @@ class Highlight {
         );
       }
 
-      modeBuffer.write(lexeme);
+      modeBuffer.addRange(match.index, match.index + lexeme.length);
       return lexeme.length;
     }
 

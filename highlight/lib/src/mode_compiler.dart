@@ -314,6 +314,7 @@ class MultiRegex {
     final allRows = _rows;
     final nextClass = _nextClass;
     final classes = _classCount + 1;
+    final contexts = _contexts;
     final regexes = _regexes;
     final length = s.length;
     var unit = from > 0 ? s.codeUnitAt(from - 1) : -1;
@@ -352,7 +353,7 @@ class MultiRegex {
       final context = before < 0
           ? _atLineStart
           : before < 128
-          ? _contexts[before]
+          ? contexts[before]
           : before == 0x2028 || before == 0x2029
           ? _atLineStart
           : _afterOther;
