@@ -470,16 +470,20 @@ class Highlight {
       final lexeme = match['0'] as String? ?? '';
       // Callback data is local to this mode invocation, never the shared rule.
       final newMode = (match['rule'] as Mode).shallowCopy();
-      final beginMatch =
-          directRuleMatch(newMode.beginRe, match) ?? callbackMatch(match);
 
-      newMode.data ??= {};
-      final resp = CallbackResponse(newMode.data!);
-      final beforeCallbacks = [newMode.beforeBeginCallback, newMode.onBegin];
-      for (final cb in beforeCallbacks) {
-        if (cb == null) continue;
-        (cb as Function)(beginMatch, resp);
-        if (resp.isMatchIgnored) return doIgnore(lexeme);
+      // Most rules have no callback. Build the callback match, its response
+      // and the data map only for the rules that have one.
+      final beforeBegin = newMode.beforeBeginCallback;
+      final onBegin = newMode.onBegin;
+      if (beforeBegin != null || onBegin != null) {
+        final beginMatch =
+            directRuleMatch(newMode.beginRe, match) ?? callbackMatch(match);
+        final resp = CallbackResponse(newMode.data ??= {});
+        for (final cb in [beforeBegin, onBegin]) {
+          if (cb == null) continue;
+          (cb as Function)(beginMatch, resp);
+          if (resp.isMatchIgnored) return doIgnore(lexeme);
+        }
       }
 
       if (newMode.skip == true) {
