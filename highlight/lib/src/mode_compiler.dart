@@ -556,7 +556,8 @@ class RuleMatchCache {
 
 class ResumableMultiRegex {
   final List<(RegExp, MatchRule)> rules = [];
-  final Map<int, MultiRegex> multiRegexes = {};
+  // The matcher that starts at each rule index.
+  final List<MultiRegex?> _matchers = [];
   int count = 0;
   int lastIndex = 0;
   int regexIndex = 0;
@@ -566,8 +567,11 @@ class ResumableMultiRegex {
   ResumableMultiRegex(this.langRe, [this.table]);
 
   MultiRegex getMatcher(int index) {
-    final existing = multiRegexes[index];
-    if (existing != null) return existing;
+    final matchers = _matchers;
+    if (index < matchers.length) {
+      final existing = matchers[index];
+      if (existing != null) return existing;
+    }
 
     final matcher = MultiRegex(langRe, table);
     for (var i = index; i < rules.length; i++) {
@@ -575,7 +579,10 @@ class ResumableMultiRegex {
       matcher.addRule(re, rule);
     }
     matcher.compile();
-    multiRegexes[index] = matcher;
+    while (matchers.length <= index) {
+      matchers.add(null);
+    }
+    matchers[index] = matcher;
     return matcher;
   }
 
