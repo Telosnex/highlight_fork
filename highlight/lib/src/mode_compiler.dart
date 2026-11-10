@@ -115,7 +115,7 @@ class MultiRegex {
     if (table != null) {
       final strategy = debugStrategy;
       if (strategy == null ? !_isWeb : strategy == MatchStrategy.dispatch) {
-        return _execDispatch(s, from, table);
+        return _execDispatch(s, from, table, cache);
       }
       if (cache != null &&
           _rules.length > 1 &&
@@ -166,12 +166,16 @@ class MultiRegex {
   List<List<int>?>? _dispatch;
   List<int> _requires = const [];
   List<Uint8List> _seconds = const [];
+  List<Uint8List?> _runStarts = const [];
+  List<Uint8List?> _runs = const [];
   bool _unicode = false;
 
   void _buildDispatch(RegexTable table) {
     final sets = [for (final id in _ruleIds) table.firstSet(id)];
     _requires = [for (final set in sets) set.requires];
     _seconds = [for (final set in sets) set.second];
+    _runStarts = [for (final set in sets) set.runStart];
+    _runs = [for (final set in sets) set.run];
     _unicode = _regexes.any((re) => re.isUnicode);
     final shared = <String, List<int>>{};
     _dispatch = List<List<int>?>.generate(FirstSet.bucketCount, (bucket) {
@@ -184,8 +188,21 @@ class MultiRegex {
     });
   }
 
-  RuleMatch? _execDispatch(String s, int from, RegexTable table) {
+  RuleMatch? _execDispatch(
+    String s,
+    int from,
+    RegexTable table,
+    RuleMatchCache? cache,
+  ) {
     if (_dispatch == null) _buildDispatch(table);
+    if (cache != null && !identical(cache._runTable, table)) {
+      cache._resetRuns(table);
+    }
+    final failFrom = cache?._failFrom;
+    final failUntil = cache?._failUntil;
+    final ids = _ruleIds;
+    final runStarts = _runStarts;
+    final runs = _runs;
     final dispatch = _dispatch!;
     final requires = _requires;
     final seconds = _seconds;
@@ -234,6 +251,11 @@ class MultiRegex {
             continue;
           }
         }
+        final runStart = runStarts[rule];
+        if (runStart != null && failUntil != null) {
+          final id = ids[rule];
+          if (pos < failUntil[id] && pos >= failFrom![id]) continue;
+        }
         final match = regexes[rule].matchAsPrefix(s, pos) as RegExpMatch?;
         if (match != null) {
           return RuleMatch._(
@@ -243,6 +265,22 @@ class MultiRegex {
             0,
             _ruleStarts[rule + 1] - _ruleStarts[rule] - 1,
           );
+        }
+        // See [FirstSet.run]: the rule fails in the rest of the run too.
+        if (runStart != null &&
+            failUntil != null &&
+            unit < 128 &&
+            runStart[unit] != 0) {
+          final run = runs[rule]!;
+          var end = pos + 1;
+          while (end < length) {
+            final u = s.codeUnitAt(end);
+            if (u >= 128 || run[u] == 0) break;
+            end++;
+          }
+          final id = ids[rule];
+          failFrom![id] = pos;
+          failUntil[id] = end;
         }
       }
     }
@@ -353,6 +391,18 @@ class RuleMatchCache {
   RegexTable? _table;
   List<int> _starts = const [];
   List<RegExpMatch?> _matches = const [];
+
+  // A regex with a [FirstSet.run] fails at each position from [_failFrom]
+  // up to, but not including, [_failUntil].
+  RegexTable? _runTable;
+  List<int> _failFrom = const [];
+  List<int> _failUntil = const [];
+
+  void _resetRuns(RegexTable table) {
+    _runTable = table;
+    _failFrom = List<int>.filled(table.regexes.length, 0);
+    _failUntil = List<int>.filled(table.regexes.length, 0);
+  }
 
   void _reset(RegexTable table) {
     _table = table;

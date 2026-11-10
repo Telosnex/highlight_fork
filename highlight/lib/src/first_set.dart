@@ -25,7 +25,21 @@ class FirstSet {
   final Uint8List second;
   final int requires;
 
-  FirstSet._(this.buckets, this.second, this.requires);
+  /// For a regex that is one unit of [runStart], then a repeat of units of
+  /// [run], then the rest: `[a-z]\w*(?=:)`. Else null. The index is an ASCII code unit.
+  ///
+  /// When such a regex fails at a unit of [runStart], it tried the rest at
+  /// each position of the run. So it also fails at each position in the run.
+  final Uint8List? runStart;
+  final Uint8List? run;
+
+  FirstSet._(
+    this.buckets,
+    this.second,
+    this.requires, [
+    this.runStart,
+    this.run,
+  ]);
 
   /// A set that permits every position. It is correct for every regex.
   factory FirstSet.all() => FirstSet._(_all(), _everySecond, 0);
@@ -53,7 +67,7 @@ class FirstSet {
       final second = unicode || node.length1 || !_isEmptySet(node.empty)
           ? _everySecond
           : node.second;
-      return FirstSet._(buckets, second, requires);
+      return FirstSet._(buckets, second, requires, parser.runStart, parser.run);
     } on FormatException {
       return FirstSet.all();
     }
@@ -119,9 +133,34 @@ class _Parser {
 
   Never _fail() => throw const FormatException();
 
+  // The first two terms of the regex, when it has no alternatives.
+  int _depth = 0;
+  int _topTerms = 0;
+  bool _topAlternatives = false;
+  Uint8List? _unit0;
+  Uint8List? _unit1;
+  int _quantifier0 = 0;
+  int _quantifier1 = 0;
+  Uint8List? runStart;
+  Uint8List? run;
+
   _Node parseAll() {
     final node = _disjunction();
     if (i != src.length) _fail();
+    const plus = 0x2b;
+    const star = 0x2a;
+    final unit0 = _unit0;
+    final unit1 = _unit1;
+    if (!_topAlternatives && unit0 != null) {
+      if (_quantifier0 == plus) {
+        runStart = run = unit0;
+      } else if (_quantifier0 == 0 &&
+          unit1 != null &&
+          (_quantifier1 == plus || _quantifier1 == star)) {
+        runStart = unit0;
+        run = unit1;
+      }
+    }
     return node;
   }
 
@@ -129,6 +168,7 @@ class _Parser {
     var node = _alternative();
     while (i < src.length && src.codeUnitAt(i) == 0x7c /* | */ ) {
       i++;
+      if (_depth == 0) _topAlternatives = true;
       final other = _alternative();
       final nonEmpty = _none();
       final empty = _none();
@@ -193,13 +233,35 @@ class _Parser {
 
   /// With [skip], the caller ignores the result: only the syntax is read.
   _Node _term(bool skip) {
+    final top = _depth == 0;
+    _loose = false;
+    _unit = null;
     final atom = _atom(skip);
-    return _quantifier(atom);
+    // A set with too many units is not exact, and the run needs exact sets.
+    final unit = _loose ? null : _unit;
+    _lastQuantifier = 0;
+    final term = _quantifier(atom);
+    if (top) {
+      if (_topTerms == 0) {
+        _unit0 = unit;
+        _quantifier0 = _lastQuantifier;
+      } else if (_topTerms == 1) {
+        _unit1 = unit;
+        _quantifier1 = _lastQuantifier;
+      }
+      _topTerms++;
+    }
+    return term;
   }
+
+  /// The ASCII units of the last atom, when it matches exactly one unit.
+  Uint8List? _unit;
+  int _lastQuantifier = 0;
 
   _Node _quantifier(_Node atom) {
     if (i >= src.length) return atom;
     final c = src.codeUnitAt(i);
+    _lastQuantifier = c;
     int min;
     var repeats = true;
     if (c == 0x2a /* * */ ) {
@@ -214,9 +276,13 @@ class _Parser {
       i++;
     } else if (c == 0x7b /* { */ ) {
       final parsed = _braces();
-      if (parsed == null) return atom;
+      if (parsed == null) {
+        _lastQuantifier = 0;
+        return atom;
+      }
       min = parsed;
     } else {
+      _lastQuantifier = 0;
       return atom;
     }
     if (i < src.length && src.codeUnitAt(i) == 0x3f /* ? */ ) i++;
@@ -277,12 +343,13 @@ class _Parser {
       case 0x28: // (
         return _group();
       case 0x5b: // [
-        return _units(_class());
+        return _units(_unit = _class());
       case 0x2e: // .
         i++;
         final set = _allUnits();
         set[0x0a] = 0;
         set[0x0d] = 0;
+        _unit = set;
         return _Node(set, _none(), 0, false, length1: true);
       case 0x5c: // \
         return _escape();
@@ -293,9 +360,12 @@ class _Parser {
         _fail();
       default:
         i++;
-        if (skip) return _closed;
+        // Only the first two terms of the regex need their sets after the
+        // sequence is closed.
+        if (skip && (_depth > 0 || _topTerms > 1)) return _closed;
         final set = _none();
         _addUnit(set, c);
+        _unit = set;
         return _units(set);
     }
   }
@@ -307,6 +377,7 @@ class _Parser {
 
   _Node _group() {
     i++; // (
+    _depth++;
     var lookahead = false;
     var negative = false;
     var behind = false;
@@ -337,6 +408,9 @@ class _Parser {
     final inner = _disjunction();
     if (i >= src.length || src.codeUnitAt(i) != 0x29 /* ) */ ) _fail();
     i++;
+    _depth--;
+    // The inner atoms are not the atom of this term.
+    _unit = null;
     if (behind || negative) return _Node(_none(), _all(), 0, true);
     if (lookahead) {
       // An empty match here needs a match of the inner part at the same
@@ -379,6 +453,7 @@ class _Parser {
     }
     final set = _none();
     _escapeUnits(c, set, inClass: false);
+    _unit = set;
     return _units(set);
   }
 
@@ -515,7 +590,6 @@ class _Parser {
       i++;
     }
     final set = _none();
-    _loose = false;
     while (true) {
       if (i >= src.length) _fail();
       if (src.codeUnitAt(i) == 0x5d /* ] */ ) break;

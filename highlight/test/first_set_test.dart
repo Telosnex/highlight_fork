@@ -1,5 +1,6 @@
 // A first set must permit every position where its regex matches.
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:highlight_fork/highlight_core.dart';
 import 'package:highlight_fork/languages/_all.dart';
@@ -123,6 +124,31 @@ void main() {
     expect(second(r'(.)\1x'), [...all]..remove(FirstSet.end));
   });
 
+  test('a run', () {
+    FirstSet of(String source) =>
+        FirstSet.of(source, caseSensitive: true, unicode: false);
+    List<int> ascii(Uint8List? set) => [
+      for (var u = 0; u < 128; u++)
+        if (set![u] != 0) u,
+    ];
+    final name = of(r'[a-c]\d*(?=:)');
+    expect(ascii(name.runStart), units('abc'));
+    expect(ascii(name.run), units('0123456789'));
+    final word = of('[ab]+:');
+    expect(ascii(word.runStart), units('ab'));
+    expect(ascii(word.run), units('ab'));
+    for (final source in [
+      r'\b[a-c]\d*:', // An assertion first: the start is not the run.
+      r'([a-c])\d*:', // A group can be the target of a backreference.
+      r'[a-c]\d*:|x',
+      r'[a-c]?\d*:',
+      r'[a-c]\d?:',
+      r'[a-c]:',
+    ]) {
+      expect(of(source).runStart, isNull, reason: source);
+    }
+  });
+
   test('case', () {
     expect(buckets('a', caseSensitive: false), [
       ...units('Aa'),
@@ -154,6 +180,7 @@ void main() {
         'a_1 Z9\t"x" \'y\' `z` é\u2028ß {[(<>)]} #!/\$%^&*-+=|\\:;,.?~@ \r\n'
         '  - 0x1F 1.5e3\n';
     var regexes = 0;
+    var runs = 0;
     for (final name in hljs.listLanguages()) {
       final language = hljs.getLanguage(name)!;
       // The first parse compiles the grammar.
@@ -167,6 +194,22 @@ void main() {
         final re = table.regexes[id];
         final set = table.firstSet(id);
         regexes++;
+        final runStart = set.runStart;
+        if (runStart != null) {
+          runs++;
+          for (var pos = 0; pos < text.length; pos++) {
+            final unit = text.codeUnitAt(pos);
+            if (unit >= 128 || runStart[unit] == 0) continue;
+            if (re.matchAsPrefix(text, pos) != null) continue;
+            for (var next = pos + 1; next < text.length; next++) {
+              final u = text.codeUnitAt(next);
+              if (u >= 128 || set.run![u] == 0) break;
+              if (re.matchAsPrefix(text, next) != null) {
+                fail('$name: /${re.pattern}/ fails at $pos, matches at $next');
+              }
+            }
+          }
+        }
         for (var pos = 0; pos <= text.length; pos++) {
           final refused = refusal(set, text, pos);
           if (refused != null && re.matchAsPrefix(text, pos) != null) {
@@ -176,5 +219,6 @@ void main() {
       }
     }
     expect(regexes, greaterThan(4000));
+    expect(runs, greaterThan(100));
   });
 }
