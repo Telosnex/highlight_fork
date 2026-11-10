@@ -24,17 +24,17 @@ const _maxKeywordHits = 7;
 class HighlightContinuation {
   final Highlight _owner;
   final Mode _language;
-  final Mode _top;
+  final _OpenMode _top;
   final Map<String, HighlightContinuation> _sublanguages;
   final Map<String, int> _keywordHits;
 
   HighlightContinuation._(
     this._owner,
     this._language,
-    Mode top,
+    _OpenMode top,
     Map<String, HighlightContinuation> sublanguages,
     Map<String, int> keywordHits,
-  ) : _top = _copyModeStack(top),
+  ) : _top = top.copy(),
       _sublanguages = Map.unmodifiable(sublanguages),
       _keywordHits = Map.unmodifiable(keywordHits);
 }
@@ -54,14 +54,29 @@ dynamic _copyCallbackValue(dynamic value) {
   return value;
 }
 
-Mode _copyModeStack(Mode mode) {
-  final copy = mode.shallowCopy()
-    ..modeId = mode.modeId
-    ..data = mode.data == null
-        ? null
-        : _copyCallbackValue(mode.data) as Map<String, dynamic>;
-  if (mode.parent != null) copy.parent = _copyModeStack(mode.parent!);
-  return copy;
+/// A mode that is open at a position of a parse. The [mode] is a rule of
+/// the grammar, which all parses share. The state of this one use is here.
+class _OpenMode {
+  final Mode mode;
+  final _OpenMode? parent;
+  final int id;
+
+  /// The data of the callbacks of the mode.
+  Map<String, dynamic>? data;
+
+  _OpenMode(this.mode, this.parent, this.id, this.data);
+
+  /// A copy of this mode and its parents that shares no callback data.
+  _OpenMode copy() => _OpenMode(mode, parent?.copy(), id, _copyData());
+
+  Map<String, dynamic>? _copyData() =>
+      data == null ? null : _copyCallbackValue(data) as Map<String, dynamic>;
+
+  /// For [HighlightResult.top]: a copy of the grammar mode with the state.
+  Mode toMode() => mode.shallowCopy()
+    ..parent = parent?.toMode()
+    ..modeId = id
+    ..data = _copyData();
 }
 
 class HighlightResult {
@@ -72,7 +87,14 @@ class HighlightResult {
   bool illegal;
 
   /// Legacy access to the active mode. Use [continuation] for resuming parses.
-  Mode? top;
+  Mode? get top => _top ??= _open?.toMode();
+  set top(Mode? value) {
+    _top = value;
+    _open = null;
+  }
+
+  Mode? _top;
+  _OpenMode? _open;
 
   /// Reusable state for the next chunk; null when parsing failed.
   final HighlightContinuation? continuation;
@@ -86,14 +108,15 @@ class HighlightResult {
     required this.relevance,
     required this.emitter,
     this.illegal = false,
-    this.top,
+    Mode? top,
     this.continuation,
     this.secondBest,
     this.code,
     this.errorRaised,
     this.illegalBy,
     String? value,
-  }) : _value = value;
+  }) : _value = value,
+       _top = top;
 
   String get value {
     _value ??= emitter.toHTML();
@@ -244,8 +267,8 @@ class Highlight {
     final md = _ensureCompiled(language);
     final options = <String, dynamic>{'classPrefix': 'hljs-'};
     var top = continuation == null
-        ? (md.shallowCopy()..modeId = 0)
-        : _copyModeStack(continuation._top);
+        ? _OpenMode(md, null, 0, null)
+        : continuation._top.copy();
     final continuations = <String, HighlightContinuation>{
       ...?continuation?._sublanguages,
     };
@@ -256,9 +279,8 @@ class Highlight {
     var iterations = 0;
     var resumeScanAtSamePosition = false;
     var modeIdCounter = 0;
-    for (Mode? active = top; active != null; active = active.parent) {
-      final id = active.modeId ?? 0;
-      if (id > modeIdCounter) modeIdCounter = id;
+    for (_OpenMode? open = top; open != null; open = open.parent) {
+      if (open.id > modeIdCounter) modeIdCounter = open.id;
     }
 
     late void Function() processBuffer;
@@ -307,8 +329,8 @@ class Highlight {
     processKeywords = () {
       if (modeBuffer.isEmpty) return;
       final text = modeBuffer.toString();
-      final keywords = top.compiledKeywords;
-      final keywordPatternRe = top.keywordPatternRe;
+      final keywords = top.mode.compiledKeywords;
+      final keywordPatternRe = top.mode.keywordPatternRe;
       if (keywords == null || keywordPatternRe == null) {
         emitter.addText(text);
         return;
@@ -340,7 +362,7 @@ class Highlight {
         }
       }
 
-      final scan = top.keywordScan;
+      final scan = top.mode.keywordScan;
       if (scan != null) {
         scan.forEachWord(text, onWord);
       } else {
@@ -357,7 +379,7 @@ class Highlight {
 
       HighlightResult result;
 
-      final subLang = top.subLanguage;
+      final subLang = top.mode.subLanguage;
       if (subLang is String) {
         if (_languages[subLang] == null) {
           emitter.addText(text);
@@ -373,14 +395,14 @@ class Highlight {
         result = highlightAuto(text, languageSubset: subset);
       }
 
-      if ((top.relevance ?? 0) > 0) {
+      if ((top.mode.relevance ?? 0) > 0) {
         relevance += result.relevance;
       }
       emitter.addSublanguage(result.emitter, result.language);
     }
 
     processBuffer = () {
-      if (top.subLanguage != null) {
+      if (top.mode.subLanguage != null) {
         processSubLanguage();
       } else {
         processKeywords();
@@ -388,9 +410,11 @@ class Highlight {
       modeBuffer.clear();
     };
 
-    // [mode] is a rule of the grammar, which many parses share, so the open
-    // mode is a copy. With [owned], the caller made that copy already.
-    Mode startNewMode(Mode mode, RuleMatch match, {bool owned = false}) {
+    void startNewMode(
+      Mode mode,
+      RuleMatch match, [
+      Map<String, dynamic>? data,
+    ]) {
       final scope = mode.scope;
       if (mode.skip != true && scope is String && scope.isNotEmpty) {
         emitter.openNode(_classNameAlias(language, scope) ?? scope);
@@ -409,41 +433,52 @@ class Highlight {
         }
       }
 
-      top = (owned ? mode : mode.shallowCopy())
-        ..parent = top
-        ..modeId = ++modeIdCounter;
-      return top;
+      // Callback data belongs to this use of the mode, never to the rule.
+      final ruleData = mode.data;
+      top = _OpenMode(
+        mode,
+        top,
+        ++modeIdCounter,
+        data ?? (ruleData == null ? null : Map<String, dynamic>.from(ruleData)),
+      );
     }
 
-    Mode? endOfMode(Mode mode, int matchIndex) {
-      // Match in place. A substring of the remaining source here made every
-      // end match copy the rest of the document.
-      final matched =
-          mode.endRe?.matchAsPrefix(codeToHighlight, matchIndex)
-              as RegExpMatch?;
-
-      if (matched != null) {
-        final onEnd = mode.onEnd;
-        if (onEnd != null) {
-          mode.data ??= {};
-          final resp = CallbackResponse(mode.data!);
-          onEnd(matched, resp);
-          if (resp.isMatchIgnored) return null;
+    // The mode that an end match at [matchIndex] closes: [open] or a parent.
+    // With [known], the end regex of [open] is known to match there.
+    _OpenMode? endOfMode(_OpenMode open, int matchIndex, {bool known = false}) {
+      final mode = open.mode;
+      final onEnd = mode.onEnd;
+      var ends = known && onEnd == null;
+      if (!ends) {
+        // Match in place. A substring of the remaining source here made
+        // every end match copy the rest of the document.
+        final matched =
+            mode.endRe?.matchAsPrefix(codeToHighlight, matchIndex)
+                as RegExpMatch?;
+        if (matched != null) {
+          if (onEnd != null) {
+            final resp = CallbackResponse(open.data ??= {});
+            onEnd(matched, resp);
+            if (resp.isMatchIgnored) return null;
+          }
+          ends = true;
         }
-
-        while (mode.endsParent == true && mode.parent != null) {
-          mode = mode.parent!;
+      }
+      if (ends) {
+        var closed = open;
+        while (closed.mode.endsParent == true && closed.parent != null) {
+          closed = closed.parent!;
         }
-        return mode;
+        return closed;
       }
       if (mode.endsWithParent == true) {
-        return endOfMode(mode.parent!, matchIndex);
+        return endOfMode(open.parent!, matchIndex);
       }
       return null;
     }
 
     int doIgnore(String lexeme) {
-      final matcher = top.matcher;
+      final matcher = top.mode.matcher;
       if (matcher != null && matcher.regexIndex == 0) {
         if (lexeme.isNotEmpty) modeBuffer.write(lexeme[0]);
         return 1;
@@ -455,8 +490,8 @@ class Highlight {
 
     int doBeginMatch(RuleMatch match) {
       final lexeme = match.lexeme;
-      // Callback data is local to this mode invocation, never the shared rule.
-      final newMode = match.rule.mode!.shallowCopy();
+      final newMode = match.rule.mode!;
+      Map<String, dynamic>? data;
 
       // Most rules have no callback. Build the callback match, its response
       // and the data map only for the rules that have one.
@@ -464,7 +499,9 @@ class Highlight {
       final onBegin = newMode.onBegin;
       if (beforeBegin != null || onBegin != null) {
         final beginMatch = callbackMatch(newMode.beginRe, match);
-        final resp = CallbackResponse(newMode.data ??= {});
+        final ruleData = newMode.data;
+        data = ruleData == null ? {} : Map<String, dynamic>.from(ruleData);
+        final resp = CallbackResponse(data);
         for (final cb in [beforeBegin, onBegin]) {
           if (cb == null) continue;
           (cb as Function)(beginMatch, resp);
@@ -483,7 +520,7 @@ class Highlight {
           modeBuffer.write(lexeme);
         }
       }
-      startNewMode(newMode, match, owned: true);
+      startNewMode(newMode, match, data);
       return newMode.returnBegin == true ? 0 : lexeme.length;
     }
 
@@ -492,12 +529,18 @@ class Highlight {
     dynamic doEndMatch(RuleMatch match) {
       final lexeme = match.lexeme;
       final matchIndex = match.index;
-      final endMode = endOfMode(top, matchIndex);
+      // The end rule of a mode that does not end with its parent is the end
+      // regex of that mode, and that rule gave this match.
+      final endMode = endOfMode(
+        top,
+        matchIndex,
+        known: top.mode.endsWithParent != true && top.mode.endRe != null,
+      );
       if (endMode == null) return noMatch;
 
-      final origin = top;
+      final origin = top.mode;
 
-      final endScope = top.endScope;
+      final endScope = origin.endScope;
       if (endScope is Map && endScope['_wrap'] != null) {
         processBuffer();
         final wrap =
@@ -519,37 +562,30 @@ class Highlight {
         }
       }
 
-      bool isSameMode(Mode a, Mode b) {
-        if (a.modeId != null && b.modeId != null) {
-          return a.modeId == b.modeId;
-        }
-        return identical(a, b);
-      }
-
       final stopMode = endMode.parent;
       do {
-        if (top.scope != null && top.skip != true) {
+        final mode = top.mode;
+        if (mode.scope != null && mode.skip != true) {
           emitter.closeNode();
         }
-        if (top.skip != true && top.subLanguage == null) {
-          relevance += top.relevance ?? 0;
+        if (mode.skip != true && mode.subLanguage == null) {
+          relevance += mode.relevance ?? 0;
         }
         top = top.parent ?? top;
-      } while (stopMode != null && !isSameMode(top, stopMode));
+      } while (stopMode != null && !identical(top, stopMode));
 
-      if (endMode.starts != null) {
-        startNewMode(endMode.starts!, match);
-      }
+      final starts = endMode.mode.starts;
+      if (starts != null) startNewMode(starts, match);
       return origin.returnEnd == true ? 0 : lexeme.length;
     }
 
     void processContinuations() {
       final list = <String>[];
       var current = top;
-      while (!identical(current, md) && current.parent != null) {
-        final scope = current.scope;
+      while (current.parent != null) {
+        final scope = current.mode.scope;
         if (scope is String && scope.isNotEmpty) {
-          if (current.skip != true) {
+          if (current.mode.skip != true) {
             list.insert(0, _classNameAlias(language, scope) ?? scope);
           }
         }
@@ -593,7 +629,7 @@ class Highlight {
         return doBeginMatch(match);
       } else if (type == MatchType.illegal && !ignoreIllegals) {
         throw StateError(
-          'Illegal lexeme "$lexeme" for mode "${top.scope ?? '<unnamed>'}"',
+          'Illegal lexeme "$lexeme" for mode "${top.mode.scope ?? '<unnamed>'}"',
         );
       } else if (type == MatchType.end) {
         final processed = doEndMatch(match);
@@ -625,7 +661,7 @@ class Highlight {
     try {
       final emitTokens = language.emitTokens;
       if (emitTokens == null) {
-        final matcher = top.matcher;
+        final matcher = top.mode.matcher;
         matcher?.considerAll();
 
         while (true) {
@@ -633,10 +669,10 @@ class Highlight {
           if (resumeScanAtSamePosition) {
             resumeScanAtSamePosition = false;
           } else {
-            final matcher = top.matcher;
+            final matcher = top.mode.matcher;
             matcher?.considerAll();
           }
-          final matcher = top.matcher;
+          final matcher = top.mode.matcher;
           if (matcher == null) break;
           matcher.lastIndex = index;
 
@@ -668,7 +704,6 @@ class Highlight {
         relevance: relevance,
         emitter: emitter,
         illegal: false,
-        top: top,
         continuation: HighlightContinuation._(
           this,
           language,
@@ -676,7 +711,7 @@ class Highlight {
           continuations,
           keywordHits,
         ),
-      );
+      ).._open = top;
     } catch (err) {
       if (err is StateError && err.message.contains('Illegal')) {
         return HighlightResult(
@@ -692,7 +727,7 @@ class Highlight {
               (index - 100).clamp(0, codeToHighlight.length),
               (index + 100).clamp(0, codeToHighlight.length),
             ),
-            'mode': top.scope,
+            'mode': top.mode.scope,
           },
         );
       } else if (_safeMode) {
@@ -703,8 +738,7 @@ class Highlight {
           emitter: emitter,
           illegal: false,
           errorRaised: err,
-          top: top,
-        );
+        ).._open = top;
       } else {
         rethrow;
       }
