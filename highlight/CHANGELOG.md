@@ -1,3 +1,17 @@
+## 1.1.0
+
+Faster full parse. Normal code blocks parse in about half the time of 1.0.0,
+and in about half the time of highlight.js in Node.
+
+- An automaton from each rule's regex rejects most positions without a regex
+  call.
+- The rules of a position are chosen by the units before and after it.
+- The keyword scan also finds the words of patterns that are not one run,
+  such as `[A-Za-z]\w+|__\w+__`.
+- An open mode is a small object, not a copy of its `Mode`.
+- `HighlightResult.top` is a getter and setter. It returns the open mode
+  stack, as before.
+
 ## 1.0.0
 
 - First stable release.

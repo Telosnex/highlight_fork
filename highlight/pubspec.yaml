@@ -1,6 +1,6 @@
 name: highlight_fork
 description: Syntax highlighting for Dart with lots of languages and themes support.
-version: 1.0.0
+version: 1.1.0
 homepage: https://github.com/Telosnex/highlight_fork
 repository: https://github.com/Telosnex/highlight_fork/tree/master/highlight
 issue_tracker: https://github.com/Telosnex/highlight_fork/issues
