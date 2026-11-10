@@ -149,6 +149,25 @@ void main() {
     }
   });
 
+  test('a regex that needs no regex call', () {
+    FirstSet of(String source, {bool caseSensitive = true}) =>
+        FirstSet.of(source, caseSensitive: caseSensitive, unicode: false);
+    expect(of('"""').literal, '"""');
+    expect(of(r'\$\{').literal, r'${');
+    expect(of('=>').literal, '=>');
+    for (final source in ['a+', 'a|b', r'\d', r'\n', '(a)', 'é', '[a]', '.']) {
+      expect(of(source).literal, isNull, reason: source);
+    }
+    expect(of('ab', caseSensitive: false).literal, isNull);
+
+    expect(of('[{}]').single, isTrue);
+    expect(of(r'\d').single, isTrue);
+    expect(of('[a]', caseSensitive: false).single, isTrue);
+    for (final source in ['[ab]+', '[ab]c', '([ab])', '[ab]|c', r'\b']) {
+      expect(of(source).single, isFalse, reason: source);
+    }
+  });
+
   test('case', () {
     expect(buckets('a', caseSensitive: false), [
       ...units('Aa'),
@@ -181,6 +200,7 @@ void main() {
         '  - 0x1F 1.5e3\n';
     var regexes = 0;
     var runs = 0;
+    var known = 0;
     for (final name in hljs.listLanguages()) {
       final language = hljs.getLanguage(name)!;
       // The first parse compiles the grammar.
@@ -210,6 +230,21 @@ void main() {
             }
           }
         }
+        final literal = set.literal;
+        if (literal != null || set.single) {
+          known++;
+          for (var pos = 0; pos < text.length; pos++) {
+            final unit = text.codeUnitAt(pos);
+            if (literal == null && unit >= 128) continue;
+            final expected = literal != null
+                ? (text.startsWith(literal, pos) ? literal : null)
+                : (set.buckets[unit] != 0 ? text[pos] : null);
+            final match = re.matchAsPrefix(text, pos);
+            if (match?.group(0) != expected || (match?.groupCount ?? 0) != 0) {
+              fail('$name: /${re.pattern}/ at $pos is not "$expected"');
+            }
+          }
+        }
         for (var pos = 0; pos <= text.length; pos++) {
           final refused = refusal(set, text, pos);
           if (refused != null && re.matchAsPrefix(text, pos) != null) {
@@ -220,5 +255,6 @@ void main() {
     }
     expect(regexes, greaterThan(4000));
     expect(runs, greaterThan(100));
+    expect(known, greaterThan(500));
   });
 }

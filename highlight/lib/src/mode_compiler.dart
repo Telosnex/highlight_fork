@@ -28,24 +28,42 @@ class MatchRule {
 /// A match of one rule in the source.
 class RuleMatch {
   final MatchRule rule;
-
-  /// The regex match. It is a match of the joined regex or of the regex of
-  /// the rule; [groups] hides the difference.
-  final RegExpMatch match;
+  final int index;
   final String lexeme;
   final int _firstGroup;
   final int _groupCount;
   List<String?>? _groups;
+  RegExpMatch? _match;
+
+  // For a match that was found without the regex: the regex and the source.
+  final RegExp? _regex;
+  final String? _source;
 
   RuleMatch._(
     this.rule,
-    this.match,
+    RegExpMatch match,
     this.lexeme,
     this._firstGroup,
     this._groupCount,
-  );
+  ) : _match = match,
+      index = match.start,
+      _regex = null,
+      _source = null;
 
-  int get index => match.start;
+  /// A match of a rule that has no capture groups.
+  RuleMatch._known(
+    this.rule,
+    this.index,
+    this.lexeme,
+    RegExp this._regex,
+    String this._source,
+  ) : _firstGroup = 0,
+      _groupCount = 0;
+
+  /// The regex match. It is a match of the joined regex or of the regex of
+  /// the rule; [groups] hides the difference.
+  RegExpMatch get match =>
+      _match ??= _regex!.matchAsPrefix(_source!, index)! as RegExpMatch;
 
   /// The lexeme, then the capture groups of the rule.
   List<String?> get groups => _groups ??= [
@@ -168,6 +186,13 @@ class MultiRegex {
   List<Uint8List> _seconds = const [];
   List<Uint8List?> _runStarts = const [];
   List<Uint8List?> _runs = const [];
+
+  // Rules whose match needs no regex call.
+  static const _always = 1;
+  static const _single = 2;
+  static const _literal = 3;
+  List<int> _kinds = const [];
+  List<String?> _literals = const [];
   bool _unicode = false;
 
   void _buildDispatch(RegexTable table) {
@@ -176,6 +201,19 @@ class MultiRegex {
     _seconds = [for (final set in sets) set.second];
     _runStarts = [for (final set in sets) set.runStart];
     _runs = [for (final set in sets) set.run];
+    _literals = [for (final set in sets) set.literal];
+    _kinds = [
+      for (var r = 0; r < sets.length; r++)
+        // The begin or the end of a mode that has none.
+        if (_regexes[r].pattern == r'\B|\b')
+          _always
+        else if (sets[r].literal != null)
+          _literal
+        else if (sets[r].single)
+          _single
+        else
+          0,
+    ];
     _unicode = _regexes.any((re) => re.isUnicode);
     final shared = <String, List<int>>{};
     _dispatch = List<List<int>?>.generate(FirstSet.bucketCount, (bucket) {
@@ -203,6 +241,7 @@ class MultiRegex {
     final ids = _ruleIds;
     final runStarts = _runStarts;
     final runs = _runs;
+    final kinds = _kinds;
     final dispatch = _dispatch!;
     final requires = _requires;
     final seconds = _seconds;
@@ -249,6 +288,28 @@ class MultiRegex {
                   before == 0x2028 ||
                   before == 0x2029)) {
             continue;
+          }
+        }
+        final kind = kinds[rule];
+        if (kind != 0) {
+          String? lexeme;
+          if (kind == _always) {
+            lexeme = '';
+          } else if (kind == _literal) {
+            final literal = _literals[rule]!;
+            if (!s.startsWith(literal, pos)) continue;
+            lexeme = literal;
+          } else if (unit >= 0 && unit < 128) {
+            lexeme = s[pos];
+          }
+          if (lexeme != null) {
+            return RuleMatch._known(
+              _rules[rule],
+              pos,
+              lexeme,
+              regexes[rule],
+              s,
+            );
           }
         }
         final runStart = runStarts[rule];

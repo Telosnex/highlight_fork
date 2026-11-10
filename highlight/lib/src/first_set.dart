@@ -33,12 +33,21 @@ class FirstSet {
   final Uint8List? runStart;
   final Uint8List? run;
 
+  /// The regex matches exactly this text and has no groups. Else null.
+  final String? literal;
+
+  /// The regex matches exactly one unit and has no groups. For an ASCII
+  /// unit, [buckets] is exact. Else false.
+  final bool single;
+
   FirstSet._(
     this.buckets,
     this.second,
     this.requires, [
     this.runStart,
     this.run,
+    this.literal,
+    this.single = false,
   ]);
 
   /// A set that permits every position. It is correct for every regex.
@@ -67,11 +76,40 @@ class FirstSet {
       final second = unicode || node.length1 || !_isEmptySet(node.empty)
           ? _everySecond
           : node.second;
-      return FirstSet._(buckets, second, requires, parser.runStart, parser.run);
+      return FirstSet._(
+        buckets,
+        second,
+        requires,
+        parser.runStart,
+        parser.run,
+        caseSensitive ? _literal(source) : null,
+        parser.single,
+      );
     } on FormatException {
       return FirstSet.all();
     }
   }
+}
+
+/// The text of a regex that is only literal ASCII units, or null. A letter or
+/// a digit after a backslash is not a literal.
+String? _literal(String source) {
+  if (source.isEmpty) return null;
+  const meta = r'^$\.*+?()[]{}|';
+  final text = StringBuffer();
+  for (var i = 0; i < source.length; i++) {
+    var c = source.codeUnitAt(i);
+    if (c >= 128) return null;
+    if (c == 0x5c /* \ */ ) {
+      if (++i == source.length) return null;
+      c = source.codeUnitAt(i);
+      if (c >= 128 || isWordUnit(c)) return null;
+    } else if (meta.contains(source[i])) {
+      return null;
+    }
+    text.writeCharCode(c);
+  }
+  return text.toString();
 }
 
 /// The result for a part of a regex.
@@ -143,6 +181,7 @@ class _Parser {
   int _quantifier1 = 0;
   Uint8List? runStart;
   Uint8List? run;
+  bool single = false;
 
   _Node parseAll() {
     final node = _disjunction();
@@ -151,6 +190,11 @@ class _Parser {
     const star = 0x2a;
     final unit0 = _unit0;
     final unit1 = _unit1;
+    single =
+        !_topAlternatives &&
+        _topTerms == 1 &&
+        unit0 != null &&
+        _quantifier0 == 0;
     if (!_topAlternatives && unit0 != null) {
       if (_quantifier0 == plus) {
         runStart = run = unit0;
