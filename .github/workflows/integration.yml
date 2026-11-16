@@ -32,7 +32,7 @@ jobs:
         with:
           persist-credentials: false
           submodules: true
-      - uses: Telosnex/telosnex_ci_tools/actions/setup-flutter@a3654aa0e8e1662f88295adaabf25bc33e1a2cae # v0.5.17
+      - uses: Telosnex/telosnex_ci_tools/actions/setup-flutter@461a03187b073db7df0237e9666e4fbd6782627d # v0.5.18
       - run: dart pub get && dart test -r expanded
         working-directory: highlight
       - run: flutter pub get && flutter test -r expanded
@@ -57,7 +57,7 @@ jobs:
         with:
           persist-credentials: false
           submodules: true
-      - uses: Telosnex/telosnex_ci_tools/actions/setup-flutter@a3654aa0e8e1662f88295adaabf25bc33e1a2cae # v0.5.17
+      - uses: Telosnex/telosnex_ci_tools/actions/setup-flutter@461a03187b073db7df0237e9666e4fbd6782627d # v0.5.18
       # dart test skips the VM-only files (@TestOn('vm'): fixtures read with
       # dart:io).
       - run: |
