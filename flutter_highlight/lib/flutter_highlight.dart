@@ -1,4 +1,3 @@
-import 'package:flutter/material.dart';
 import 'package:flutter/widgets.dart';
 import 'package:highlight_fork/highlight.dart'
     show hljs, ensureInitialized, DataNode;

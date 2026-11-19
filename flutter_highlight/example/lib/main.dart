@@ -1,3 +1,5 @@
+// Keep this Material example compatible with pre-extraction Flutter SDKs.
+// ignore: deprecated_member_use
 import 'package:flutter/material.dart';
 import 'package:flutter_highlight/flutter_highlight.dart';
 import 'package:flutter_highlight/theme_map.dart';
